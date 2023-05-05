@@ -16,18 +16,20 @@
  */
 package org.keycloak.models.sessions.infinispan;
 
-import org.infinispan.client.hotrod.RemoteCache;
-import org.infinispan.commons.api.BasicCache;
-import org.keycloak.cluster.ClusterEvent;
-import org.keycloak.cluster.ClusterProvider;
-import org.infinispan.context.Flag;
-import org.keycloak.models.KeycloakTransaction;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
+
 import org.infinispan.Cache;
+import org.infinispan.client.hotrod.RemoteCache;
+import org.infinispan.commons.api.BasicCache;
+import org.infinispan.commons.util.concurrent.CompletableFutures;
+import org.infinispan.context.Flag;
+import org.infinispan.util.concurrent.AggregateCompletionStage;
+import org.infinispan.util.concurrent.CompletionStages;
 import org.jboss.logging.Logger;
+import org.keycloak.models.KeycloakTransaction;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -55,7 +57,11 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
             throw new RuntimeException("Rollback only!");
         }
 
-        tasks.values().forEach(CacheTask::execute);
+        AggregateCompletionStage<Void> stage = CompletionStages.aggregateCompletionStage();
+        for (CacheTask task : tasks.values()) {
+            stage.dependsOn(task.execute());
+        }
+        CompletableFutures.uncheckedAwait(stage.freeze().toCompletableFuture());
     }
 
     @Override
@@ -87,8 +93,8 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         } else {
             tasks.put(taskKey, new CacheTaskWithValue<V>(value) {
                 @Override
-                public void execute() {
-                    decorateCache(cache).put(key, value);
+                public CompletionStage<?> execute() {
+                    return decorateCache(cache).putAsync(key, value);
                 }
 
                 @Override
@@ -108,8 +114,8 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         } else {
             tasks.put(taskKey, new CacheTaskWithValue<V>(value) {
                 @Override
-                public void execute() {
-                    decorateCache(cache).put(key, value, lifespan, lifespanUnit);
+                public CompletionStage<?> execute() {
+                    return decorateCache(cache).putAsync(key, value, lifespan, lifespanUnit);
                 }
 
                 @Override
@@ -129,11 +135,13 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         } else {
             tasks.put(taskKey, new CacheTaskWithValue<V>(value) {
                 @Override
-                public void execute() {
-                    V existing = cache.putIfAbsent(key, value);
-                    if (existing != null) {
-                        throw new IllegalStateException("There is already existing value in cache for key " + key);
-                    }
+                public CompletionStage<?> execute() {
+                    return cache.putIfAbsentAsync(key, value)
+                          .thenAccept(v -> {
+                              if (v != null) {
+                                  throw new IllegalStateException("There is already existing value in cache for key " + key);
+                              }
+                          });
                 }
 
                 @Override
@@ -156,8 +164,8 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         } else {
             tasks.put(taskKey, new CacheTaskWithValue<V>(value) {
                 @Override
-                public void execute() {
-                    decorateCache(cache).replace(key, value, lifespan, lifespanUnit);
+                public CompletionStage<?> execute() {
+                    return decorateCache(cache).replaceAsync(key, value, lifespan, lifespanUnit);
                 }
 
                 @Override
@@ -169,18 +177,6 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         }
     }
 
-    public <K, V> void notify(ClusterProvider clusterProvider, String taskKey, ClusterEvent event, boolean ignoreSender) {
-        log.tracev("Adding cache operation SEND_EVENT: {0}", event);
-
-        String theTaskKey = taskKey;
-        int i = 1;
-        while (tasks.containsKey(theTaskKey)) {
-            theTaskKey = taskKey + "-" + (i++);
-        }
-
-        tasks.put(taskKey, () -> clusterProvider.notify(taskKey, event, ignoreSender, ClusterProvider.DCNotify.ALL_DCS));
-    }
-
     public <K, V> void remove(BasicCache<K, V> cache, K key) {
         log.tracev("Adding cache operation: {0} on {1}", CacheOperation.REMOVE, key);
 
@@ -190,8 +186,8 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
         tasks.put(taskKey, new CacheTask() {
 
             @Override
-            public void execute() {
-                decorateCache(cache).remove(key);
+            public CompletionStage<?> execute() {
+                return decorateCache(cache).removeAsync(key);
             }
 
             @Override
@@ -227,7 +223,7 @@ public class InfinispanKeycloakTransaction implements KeycloakTransaction {
     }
 
     public interface CacheTask {
-        void execute();
+        CompletionStage<?> execute();
     }
 
     public abstract class CacheTaskWithValue<V> implements CacheTask {
