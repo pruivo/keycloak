@@ -21,51 +21,52 @@
         xsi:schemaLocation="urn:infinispan:config:14.0 http://www.infinispan.org/schemas/infinispan-config-14.0.xsd"
         xmlns="urn:infinispan:config:14.0">
 
-    <cache-container name="keycloak">
+    <cache-container name="keycloak" statistics="${infinispan.stats.enabled:false}">
         <transport lock-timeout="60000"/>
-        <local-cache name="realms" simple-cache="true">
+        <metrics gauges="${infinispan.stats.enabled:false}" histograms="${infinispan.stats.histogram.enabled:false}"/>
+        <local-cache name="realms" simple-cache="true" statistics="${infinispan.stats.enabled:false}">
             <encoding>
                 <key media-type="application/x-java-object"/>
                 <value media-type="application/x-java-object"/>
             </encoding>
             <memory max-count="10000"/>
         </local-cache>
-        <local-cache name="users" simple-cache="true">
+        <local-cache name="users" simple-cache="true"  statistics="${infinispan.stats.enabled:false}">
             <encoding>
                 <key media-type="application/x-java-object"/>
                 <value media-type="application/x-java-object"/>
             </encoding>
             <memory max-count="10000"/>
         </local-cache>
-        <distributed-cache name="sessions" owners="2">
+        <distributed-cache name="sessions" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <distributed-cache name="authenticationSessions" owners="2">
+        <distributed-cache name="authenticationSessions" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <distributed-cache name="offlineSessions" owners="2">
+        <distributed-cache name="offlineSessions" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <distributed-cache name="clientSessions" owners="2">
+        <distributed-cache name="clientSessions" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <distributed-cache name="offlineClientSessions" owners="2">
+        <distributed-cache name="offlineClientSessions" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <distributed-cache name="loginFailures" owners="2">
+        <distributed-cache name="loginFailures" owners="2" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </distributed-cache>
-        <local-cache name="authorization" simple-cache="true">
+        <local-cache name="authorization" simple-cache="true" statistics="${infinispan.stats.enabled:false}">
             <encoding>
                 <key media-type="application/x-java-object"/>
                 <value media-type="application/x-java-object"/>
             </encoding>
             <memory max-count="10000"/>
         </local-cache>
-        <replicated-cache name="work">
+        <replicated-cache name="work" statistics="${infinispan.stats.enabled:false}">
             <expiration lifespan="-1"/>
         </replicated-cache>
-        <local-cache name="keys" simple-cache="true">
+        <local-cache name="keys" simple-cache="true" statistics="${infinispan.stats.enabled:false}">
             <encoding>
                 <key media-type="application/x-java-object"/>
                 <value media-type="application/x-java-object"/>
@@ -73,7 +74,7 @@
             <expiration max-idle="3600000"/>
             <memory max-count="1000"/>
         </local-cache>
-        <distributed-cache name="actionTokens" owners="2">
+        <distributed-cache name="actionTokens" owners="2" statistics="${infinispan.stats.enabled:false}">
             <encoding>
                 <key media-type="application/x-java-object"/>
                 <value media-type="application/x-java-object"/>
