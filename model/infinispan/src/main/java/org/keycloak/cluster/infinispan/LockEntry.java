@@ -55,12 +55,13 @@ public class LockEntry implements Serializable {
     public static class ExternalizerImpl implements Externalizer<LockEntry> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, LockEntry obj) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
             MarshallUtil.marshallString(obj.node, output);
-            KeycloakMarshallUtil.marshall(obj.timestamp, output);
+            output.writeInt(obj.timestamp);
         }
 
         @Override
@@ -68,6 +69,8 @@ public class LockEntry implements Serializable {
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -77,6 +80,13 @@ public class LockEntry implements Serializable {
             LockEntry entry = new LockEntry();
             entry.setNode(MarshallUtil.unmarshallString(input));
             entry.setTimestamp(KeycloakMarshallUtil.unmarshallInteger(input));
+            return entry;
+        }
+
+        public LockEntry readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            LockEntry entry = new LockEntry();
+            entry.setNode(MarshallUtil.unmarshallString(input));
+            entry.setTimestamp(input.readInt());
             return entry;
         }
     }

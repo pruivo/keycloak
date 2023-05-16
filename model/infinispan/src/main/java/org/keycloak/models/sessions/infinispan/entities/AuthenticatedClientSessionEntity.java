@@ -170,6 +170,7 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
 
         @Override
         public void writeObject(ObjectOutput output, AuthenticatedClientSessionEntity session) throws IOException {
+            //TODO no version?
             MarshallUtil.marshallUUID(session.id, output, false);
             MarshallUtil.marshallString(session.getRealmId(), output);
             MarshallUtil.marshallString(session.getAuthMethod(), output);

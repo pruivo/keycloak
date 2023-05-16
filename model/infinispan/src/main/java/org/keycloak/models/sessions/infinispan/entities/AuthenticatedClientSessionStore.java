@@ -34,6 +34,8 @@ import org.infinispan.commons.marshall.SerializeWith;
 @SerializeWith(AuthenticatedClientSessionStore.ExternalizerImpl.class)
 public class AuthenticatedClientSessionStore {
 
+    public static final ExternalizerImpl EXTERNALIZER = new ExternalizerImpl();
+
     /**
      * Maps client UUID to client session ID.
      */
@@ -87,12 +89,12 @@ public class AuthenticatedClientSessionStore {
     public static class ExternalizerImpl implements Externalizer<AuthenticatedClientSessionStore> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, AuthenticatedClientSessionStore obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            KeycloakMarshallUtil.writeMap(obj.authenticatedClientSessionIds, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, output);
+            output.writeByte(VERSION_2);
+            KeycloakMarshallUtil.writeMapV2(obj.authenticatedClientSessionIds, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, output);
         }
 
         @Override
@@ -100,16 +102,23 @@ public class AuthenticatedClientSessionStore {
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
         }
 
         public AuthenticatedClientSessionStore readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            AuthenticatedClientSessionStore res = new AuthenticatedClientSessionStore(
+            return new AuthenticatedClientSessionStore(
               KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, ConcurrentHashMap::new)
             );
-            return res;
+        }
+
+        public AuthenticatedClientSessionStore readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            return new AuthenticatedClientSessionStore(
+                    KeycloakMarshallUtil.readMapV2(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, ConcurrentHashMap::new)
+            );
         }
     }
 }

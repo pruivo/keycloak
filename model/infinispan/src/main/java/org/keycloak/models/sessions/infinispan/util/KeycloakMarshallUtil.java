@@ -40,8 +40,6 @@ import org.jboss.logging.Logger;
  */
 public class KeycloakMarshallUtil {
 
-    private static final Logger log = Logger.getLogger(KeycloakMarshallUtil.class);
-
     public static final Externalizer<String> STRING_EXT = new StringExternalizer();
 
     public static final Externalizer<UUID> UUID_EXT = new Externalizer<UUID>() {
@@ -56,8 +54,13 @@ public class KeycloakMarshallUtil {
         }
     };
 
-    // MAP
+    public static final MarshallUtil.ElementWriter<String> STRING_WRITER = (output, element) -> MarshallUtil.marshallString(element, output);
 
+    // MAP
+    /**
+     * @deprecated Use {@link #writeMapV2(Map, Externalizer, Externalizer, ObjectOutput)}  which avoid creating a copy of the {@link Map}.
+     */
+    @Deprecated
     public static <K, V> void writeMap(Map<K, V> map, Externalizer<K> keyExternalizer, Externalizer<V> valueExternalizer, ObjectOutput output) throws IOException {
         if (map == null) {
             output.writeByte(0);
@@ -100,8 +103,60 @@ public class KeycloakMarshallUtil {
         }
     }
 
+    public static <K, V> void writeMapV2(Map<K, V> map, Externalizer<K> keyExternalizer, Externalizer<V> valueExternalizer, ObjectOutput output) throws IOException {
+        if (map == null) {
+            MarshallUtil.marshallSize(output, -1);
+            return;
+        }
+
+        int size = map.size();
+        MarshallUtil.marshallSize(output, size);
+        if (size == 0) {
+            return;
+        }
+
+        for (Map.Entry<K, V> entry : map.entrySet()) {
+            output.writeBoolean(true);
+            keyExternalizer.writeObject(output, entry.getKey());
+            valueExternalizer.writeObject(output, entry.getValue());
+        }
+        output.writeBoolean(false);
+
+    }
+
+    public static <K, V, TYPED_MAP extends Map<K, V>> TYPED_MAP readMapV2(ObjectInput input,
+                                                                        Externalizer<K> keyExternalizer, Externalizer<V> valueExternalizer,
+                                                                        MarshallUtil.MapBuilder<K, V, TYPED_MAP> mapBuilder) throws IOException, ClassNotFoundException {
+        int estimatedSize = MarshallUtil.unmarshallSize(input);
+        if (estimatedSize < 0) {
+            return null;
+        }
+        TYPED_MAP map = mapBuilder.build(estimatedSize);
+        if (estimatedSize == 0) {
+            return map;
+        }
+        while (input.readBoolean()) {
+            map.put(keyExternalizer.readObject(input), valueExternalizer.readObject(input));
+        }
+        return map;
+    }
+
+    // common use case
+    public static void writeMapOfString(Map<String, String> map, ObjectOutput output) throws IOException {
+        writeMapV2(map, STRING_EXT, STRING_EXT, output);
+    }
+
+    // common use case, creates a ConcurrentHashMap
+    public static Map<String, String> readMapOfString(ObjectInput input) throws IOException, ClassNotFoundException {
+        return readMapV2(input, STRING_EXT, STRING_EXT, ConcurrentHashMap::new);
+    }
+
     // COLLECTION
 
+    /**
+     * @deprecated Use {@link #writeCollectionV2(Collection, Externalizer, ObjectOutput)} which avoid creating a copy of the {@link Collection}.
+     */
+    @Deprecated
     public static <E> void writeCollection(Collection<E> col, Externalizer<E> valueExternalizer, ObjectOutput output) throws IOException {
         if (col == null) {
             output.writeByte(0);
@@ -137,6 +192,39 @@ public class KeycloakMarshallUtil {
 
             return col;
         }
+    }
+
+    public static <E> void writeCollectionV2(Collection<E> col, Externalizer<E> valueExternalizer, ObjectOutput output) throws IOException {
+        if (col == null) {
+            MarshallUtil.marshallSize(output, -1);
+            return;
+        }
+        int size = col.size();
+        MarshallUtil.marshallSize(output, size);
+        if (size == 0) {
+            return;
+        }
+        for (E el : col) {
+            output.writeBoolean(true);
+            valueExternalizer.writeObject(output, el);
+        }
+        output.writeBoolean(false);
+    }
+
+    public static <E, T extends Collection<E>> T readCollectionV2(ObjectInput input, Externalizer<E> valueExternalizer,
+                                                                MarshallUtil.CollectionBuilder<E, T> colBuilder) throws ClassNotFoundException, IOException {
+        int estimatedSize = MarshallUtil.unmarshallSize(input);
+        if (estimatedSize == -1) {
+            return null;
+        }
+        T col = colBuilder.build(estimatedSize);
+        if (estimatedSize == 0) {
+            return col;
+        }
+        while (input.readBoolean()) {
+            col.add(valueExternalizer.readObject(input));
+        }
+        return col;
     }
 
     /**
@@ -191,7 +279,7 @@ public class KeycloakMarshallUtil {
         }
 
         @Override
-        public String readObject(ObjectInput input) throws IOException, ClassNotFoundException {
+        public String readObject(ObjectInput input) throws IOException {
             return MarshallUtil.unmarshallString(input);
         }
 

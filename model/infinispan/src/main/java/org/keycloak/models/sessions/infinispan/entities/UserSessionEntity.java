@@ -228,6 +228,7 @@ public class UserSessionEntity extends SessionEntity {
     public static class ExternalizerImpl implements Externalizer<UserSessionEntity> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         private static final EnumMap<UserSessionModel.State, Integer> STATE_TO_ID = new EnumMap<>(UserSessionModel.State.class);
         private static final Map<Integer, UserSessionModel.State> ID_TO_STATE = new HashMap<>();
@@ -243,7 +244,7 @@ public class UserSessionEntity extends SessionEntity {
 
         @Override
         public void writeObject(ObjectOutput output, UserSessionEntity session) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(session.getAuthMethod(), output);
             MarshallUtil.marshallString(session.getBrokerSessionId(), output);
@@ -254,17 +255,22 @@ public class UserSessionEntity extends SessionEntity {
             MarshallUtil.marshallString(session.getRealmId(), output);
             MarshallUtil.marshallString(session.getUser(), output);
 
-            KeycloakMarshallUtil.marshall(session.getLastSessionRefresh(), output);
-            KeycloakMarshallUtil.marshall(session.getStarted(), output);
+            output.writeInt(session.getLastSessionRefresh());
+            output.writeInt(session.getStarted());
             output.writeBoolean(session.isRememberMe());
 
             int state = session.getState() == null ? 0 : STATE_TO_ID.get(session.getState());
-            output.writeInt(state);
+            output.writeByte(state);
 
-            Map<String, String> notes = session.getNotes();
-            KeycloakMarshallUtil.writeMap(notes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeMapOfString(session.getNotes(), output);
 
-            output.writeObject(session.getAuthenticatedClientSessions());
+            AuthenticatedClientSessionStore store = session.getAuthenticatedClientSessions();
+            if (store == null) {
+                output.writeBoolean(true);
+                return;
+            }
+            output.writeBoolean(false);
+            AuthenticatedClientSessionStore.EXTERNALIZER.writeObject(output, session.getAuthenticatedClientSessions());
         }
 
 
@@ -273,6 +279,8 @@ public class UserSessionEntity extends SessionEntity {
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -303,6 +311,34 @@ public class UserSessionEntity extends SessionEntity {
 
             AuthenticatedClientSessionStore authSessions = (AuthenticatedClientSessionStore) input.readObject();
             sessionEntity.setAuthenticatedClientSessions(authSessions);
+
+            return sessionEntity;
+        }
+
+        public UserSessionEntity readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            UserSessionEntity sessionEntity = new UserSessionEntity();
+
+            sessionEntity.setAuthMethod(MarshallUtil.unmarshallString(input));
+            sessionEntity.setBrokerSessionId(MarshallUtil.unmarshallString(input));
+            sessionEntity.setBrokerUserId(MarshallUtil.unmarshallString(input));
+            sessionEntity.setId(MarshallUtil.unmarshallString(input));
+            sessionEntity.setIpAddress(MarshallUtil.unmarshallString(input));
+            sessionEntity.setLoginUsername(MarshallUtil.unmarshallString(input));
+            sessionEntity.setRealmId(MarshallUtil.unmarshallString(input));
+            sessionEntity.setUser(MarshallUtil.unmarshallString(input));
+
+            sessionEntity.setLastSessionRefresh(input.readInt());
+            sessionEntity.setStarted(input.readInt());
+            sessionEntity.setRememberMe(input.readBoolean());
+
+            sessionEntity.setState(ID_TO_STATE.get((int) input.readByte()));
+
+            sessionEntity.setNotes(KeycloakMarshallUtil.readMapOfString(input));
+
+            if (input.readBoolean()) {
+                return sessionEntity;
+            }
+            sessionEntity.setAuthenticatedClientSessions(AuthenticatedClientSessionStore.EXTERNALIZER.readObject(input));
 
             return sessionEntity;
         }

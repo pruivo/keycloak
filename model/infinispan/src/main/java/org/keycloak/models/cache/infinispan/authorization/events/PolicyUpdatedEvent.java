@@ -87,16 +87,17 @@ public class PolicyUpdatedEvent extends InvalidationEvent implements Authorizati
     public static class ExternalizerImpl implements Externalizer<PolicyUpdatedEvent> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, PolicyUpdatedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(obj.id, output);
             MarshallUtil.marshallString(obj.name, output);
-            KeycloakMarshallUtil.writeCollection(obj.resources, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeCollection(obj.resourceTypes, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeCollection(obj.scopes, KeycloakMarshallUtil.STRING_EXT, output);
+            MarshallUtil.marshallCollection(obj.resources, output, KeycloakMarshallUtil.STRING_WRITER);
+            MarshallUtil.marshallCollection(obj.resourceTypes, output, KeycloakMarshallUtil.STRING_WRITER);
+            MarshallUtil.marshallCollection(obj.scopes, output, KeycloakMarshallUtil.STRING_WRITER);
             MarshallUtil.marshallString(obj.serverId, output);
         }
 
@@ -105,6 +106,8 @@ public class PolicyUpdatedEvent extends InvalidationEvent implements Authorizati
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -117,6 +120,18 @@ public class PolicyUpdatedEvent extends InvalidationEvent implements Authorizati
             res.resources = KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, HashSet::new);
             res.resourceTypes = KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, HashSet::new);
             res.scopes = KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, HashSet::new);
+            res.serverId = MarshallUtil.unmarshallString(input);
+
+            return res;
+        }
+
+        public PolicyUpdatedEvent readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            PolicyUpdatedEvent res = new PolicyUpdatedEvent();
+            res.id = MarshallUtil.unmarshallString(input);
+            res.name = MarshallUtil.unmarshallString(input);
+            res.resources = MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString);
+            res.resourceTypes = MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString);
+            res.scopes = MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString);
             res.serverId = MarshallUtil.unmarshallString(input);
 
             return res;

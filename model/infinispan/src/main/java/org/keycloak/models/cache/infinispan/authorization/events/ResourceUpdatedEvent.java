@@ -89,18 +89,19 @@ public class ResourceUpdatedEvent extends InvalidationEvent implements Authoriza
     public static class ExternalizerImpl implements Externalizer<ResourceUpdatedEvent> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, ResourceUpdatedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(obj.id, output);
             MarshallUtil.marshallString(obj.name, output);
             MarshallUtil.marshallString(obj.type, output);
-            KeycloakMarshallUtil.writeCollection(obj.uris, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeCollection(obj.scopes, KeycloakMarshallUtil.STRING_EXT, output);
             MarshallUtil.marshallString(obj.serverId, output);
             MarshallUtil.marshallString(obj.owner, output);
+            MarshallUtil.marshallCollection(obj.scopes, output, KeycloakMarshallUtil.STRING_WRITER);
+            MarshallUtil.marshallCollection(obj.uris, output, KeycloakMarshallUtil.STRING_WRITER);
         }
 
         @Override
@@ -108,6 +109,8 @@ public class ResourceUpdatedEvent extends InvalidationEvent implements Authoriza
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -123,6 +126,18 @@ public class ResourceUpdatedEvent extends InvalidationEvent implements Authoriza
             res.serverId = MarshallUtil.unmarshallString(input);
             res.owner = MarshallUtil.unmarshallString(input);
 
+            return res;
+        }
+
+        public ResourceUpdatedEvent readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            ResourceUpdatedEvent res = new ResourceUpdatedEvent();
+            res.id = MarshallUtil.unmarshallString(input);
+            res.name = MarshallUtil.unmarshallString(input);
+            res.type = MarshallUtil.unmarshallString(input);
+            res.serverId = MarshallUtil.unmarshallString(input);
+            res.owner = MarshallUtil.unmarshallString(input);
+            res.scopes = MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString);
+            res.uris =  MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString);
             return res;
         }
     }

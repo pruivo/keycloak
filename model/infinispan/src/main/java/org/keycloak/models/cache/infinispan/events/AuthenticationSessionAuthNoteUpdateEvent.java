@@ -28,6 +28,7 @@ import java.util.Objects;
 import org.infinispan.commons.marshall.Externalizer;
 import org.infinispan.commons.marshall.MarshallUtil;
 import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
 /**
  *
@@ -90,21 +91,22 @@ public class AuthenticationSessionAuthNoteUpdateEvent implements ClusterEvent {
     @Override
     public String toString() {
         return String.format("AuthenticationSessionAuthNoteUpdateEvent [ authSessionId=%s, tabId=%s, clientUUID=%s, authNotesFragment=%s ]",
-                authSessionId, clientUUID, authNotesFragment);
+                authSessionId, tabId, clientUUID, authNotesFragment);
     }
 
     public static class ExternalizerImpl implements Externalizer<AuthenticationSessionAuthNoteUpdateEvent> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, AuthenticationSessionAuthNoteUpdateEvent value) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(value.authSessionId, output);
             MarshallUtil.marshallString(value.tabId, output);
             MarshallUtil.marshallString(value.clientUUID, output);
-            MarshallUtil.marshallMap(value.authNotesFragment, output);
+            MarshallUtil.marshallMap(value.authNotesFragment, KeycloakMarshallUtil.STRING_WRITER, KeycloakMarshallUtil.STRING_WRITER, output);
         }
 
         @Override
@@ -112,6 +114,8 @@ public class AuthenticationSessionAuthNoteUpdateEvent implements ClusterEvent {
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -126,5 +130,14 @@ public class AuthenticationSessionAuthNoteUpdateEvent implements ClusterEvent {
             );
         }
 
+        public AuthenticationSessionAuthNoteUpdateEvent readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            // do not use create() to avoid copying the Map.
+            AuthenticationSessionAuthNoteUpdateEvent event = new AuthenticationSessionAuthNoteUpdateEvent();
+            event.authSessionId = MarshallUtil.unmarshallString(input);
+            event.tabId = MarshallUtil.unmarshallString(input);
+            event.clientUUID = MarshallUtil.unmarshallString(input);
+            event.authNotesFragment = MarshallUtil.unmarshallMap(input, MarshallUtil::unmarshallString, MarshallUtil::unmarshallString, LinkedHashMap::new);
+            return event;
+        }
     }
 }

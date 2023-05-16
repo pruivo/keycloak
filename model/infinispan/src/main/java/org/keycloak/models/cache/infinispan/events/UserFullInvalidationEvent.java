@@ -59,8 +59,8 @@ public class UserFullInvalidationEvent extends InvalidationEvent implements User
 
         event.identityFederationEnabled = identityFederationEnabled;
         if (identityFederationEnabled) {
-            event.federatedIdentities = federatedIdentities.collect(Collectors.toMap(socialLink -> socialLink.getIdentityProvider(),
-                    socialLink -> socialLink.getUserId()));
+            event.federatedIdentities = federatedIdentities.collect(Collectors.toMap(FederatedIdentityModel::getIdentityProvider,
+                    FederatedIdentityModel::getUserId));
         }
 
         return event;
@@ -102,17 +102,18 @@ public class UserFullInvalidationEvent extends InvalidationEvent implements User
     public static class ExternalizerImpl implements Externalizer<UserFullInvalidationEvent> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, UserFullInvalidationEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(obj.userId, output);
             MarshallUtil.marshallString(obj.username, output);
             MarshallUtil.marshallString(obj.email, output);
             MarshallUtil.marshallString(obj.realmId, output);
             output.writeBoolean(obj.identityFederationEnabled);
-            KeycloakMarshallUtil.writeMap(obj.federatedIdentities, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeMapOfString(obj.federatedIdentities, output);
         }
 
         @Override
@@ -120,6 +121,8 @@ public class UserFullInvalidationEvent extends InvalidationEvent implements User
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -134,6 +137,17 @@ public class UserFullInvalidationEvent extends InvalidationEvent implements User
             res.identityFederationEnabled = input.readBoolean();
             res.federatedIdentities = KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, HashMap::new);
 
+            return res;
+        }
+
+        public UserFullInvalidationEvent readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            UserFullInvalidationEvent res = new UserFullInvalidationEvent();
+            res.userId = MarshallUtil.unmarshallString(input);
+            res.username = MarshallUtil.unmarshallString(input);
+            res.email = MarshallUtil.unmarshallString(input);
+            res.realmId = MarshallUtil.unmarshallString(input);
+            res.identityFederationEnabled = input.readBoolean();
+            res.federatedIdentities = KeycloakMarshallUtil.readMapOfString(input);
             return res;
         }
     }

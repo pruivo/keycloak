@@ -16,12 +16,14 @@
  */
 package org.keycloak.models.sessions.infinispan.entities;
 
+import org.infinispan.commons.marshall.MarshallUtil;
 import org.keycloak.models.SingleUseObjectValueModel;
 
 import java.io.*;
 import java.util.*;
 import org.infinispan.commons.marshall.Externalizer;
 import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
 /**
  * @author hmlnarik
@@ -47,35 +49,43 @@ public class SingleUseObjectValueEntity implements SingleUseObjectValueModel {
 
     @Override
     public String toString() {
-        return String.format("SingleUseObjectValueEntity [ notes=%s ]", notes.toString());
+        return String.format("SingleUseObjectValueEntity [ notes=%s ]", notes);
     }
 
     public static class ExternalizerImpl implements Externalizer<SingleUseObjectValueEntity> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, SingleUseObjectValueEntity t) throws IOException {
-            output.writeByte(VERSION_1);
-
-            output.writeBoolean(t.notes.isEmpty());
-            if (! t.notes.isEmpty()) {
-                output.writeObject(t.notes);
-            }
+            output.writeByte(VERSION_2);
+            MarshallUtil.marshallMap(t.notes, KeycloakMarshallUtil.STRING_WRITER, KeycloakMarshallUtil.STRING_WRITER, output);
         }
 
         @Override
         public SingleUseObjectValueEntity readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            byte version = input.readByte();
-            
-            if (version != VERSION_1) {
-                throw new IOException("Invalid version: " + version);
+            switch (input.readByte()) {
+                case VERSION_1:
+                    return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
+                default:
+                    throw new IOException("Unknown version");
             }
-            boolean notesEmpty = input.readBoolean();
+        }
 
-            Map<String, String> notes = notesEmpty ? Collections.EMPTY_MAP : (Map<String, String>) input.readObject();
-            
+        private SingleUseObjectValueEntity readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
+            Map<String, String> notes = input.readBoolean() ?
+                    Collections.emptyMap() :
+                    (Map<String, String>) input.readObject();
             return new SingleUseObjectValueEntity(notes);
+        }
+
+        private SingleUseObjectValueEntity readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            Map<String, String> notes = MarshallUtil.unmarshallMap(input, MarshallUtil::unmarshallString, MarshallUtil::unmarshallString, HashMap::new);
+            assert notes != null;
+            return new SingleUseObjectValueEntity(notes.isEmpty() ? Collections.emptyMap() : notes);
         }
     }
 }

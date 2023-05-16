@@ -193,14 +193,15 @@ public class AuthenticationSessionEntity implements Serializable {
 
         private static final int VERSION_1 = 1;
         private static final int VERSION_2 = 2;
+        private static final int VERSION_3 = 3;
 
         public static final ExternalizerImpl INSTANCE = new ExternalizerImpl();
+        private static final ExecutionStatus[] CACHED_VALUES = ExecutionStatus.values();
 
         private static AuthenticationSessionModel.ExecutionStatus fromOrdinal(int ordinal) {
-            ExecutionStatus[] values = AuthenticationSessionModel.ExecutionStatus.values();
-            return (ordinal < 0 || ordinal >= values.length)
+            return (ordinal < 0 || ordinal >= CACHED_VALUES.length)
               ? null
-              : values[ordinal];
+              : CACHED_VALUES[ordinal];
         }
 
         public static final Externalizer<AuthenticationSessionModel.ExecutionStatus> EXECUTION_STATUS_EXT = new Externalizer<AuthenticationSessionModel.ExecutionStatus>() {
@@ -211,14 +212,14 @@ public class AuthenticationSessionEntity implements Serializable {
             }
 
             @Override
-            public AuthenticationSessionModel.ExecutionStatus readObject(ObjectInput input) throws IOException, ClassNotFoundException {
+            public AuthenticationSessionModel.ExecutionStatus readObject(ObjectInput input) throws IOException {
                 return MarshallUtil.unmarshallEnum(input, ExternalizerImpl::fromOrdinal);
             }
         };
 
         @Override
         public void writeObject(ObjectOutput output, AuthenticationSessionEntity value) throws IOException {
-            output.writeByte(VERSION_2);
+            output.writeByte(VERSION_3);
 
             MarshallUtil.marshallString(value.clientUUID, output);
 
@@ -228,15 +229,15 @@ public class AuthenticationSessionEntity implements Serializable {
 
             MarshallUtil.marshallString(value.redirectUri, output);
             MarshallUtil.marshallString(value.action, output);
-            KeycloakMarshallUtil.writeCollection(value.clientScopes, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeCollectionV2(value.clientScopes, KeycloakMarshallUtil.STRING_EXT, output);
 
-            KeycloakMarshallUtil.writeMap(value.executionStatus, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, output);
+            KeycloakMarshallUtil.writeMapV2(value.executionStatus, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, output);
             MarshallUtil.marshallString(value.protocol, output);
 
-            KeycloakMarshallUtil.writeMap(value.clientNotes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeMap(value.authNotes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeCollection(value.requiredActions, KeycloakMarshallUtil.STRING_EXT, output);
-            KeycloakMarshallUtil.writeMap(value.userSessionNotes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeMapOfString(value.clientNotes, output);
+            KeycloakMarshallUtil.writeMapOfString(value.authNotes, output);
+            KeycloakMarshallUtil.writeCollectionV2(value.requiredActions, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeMapOfString(value.userSessionNotes, output);
         }
 
         @Override
@@ -246,6 +247,8 @@ public class AuthenticationSessionEntity implements Serializable {
                     return readObjectVersion1(input);
                 case VERSION_2:
                     return readObjectVersion2(input);
+                case VERSION_3:
+                    return readObjectVersion3(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -261,13 +264,13 @@ public class AuthenticationSessionEntity implements Serializable {
               MarshallUtil.unmarshallString(input),     // action
               KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // clientScopes
 
-              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, size -> new ConcurrentHashMap<>(size)), // executionStatus
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, ConcurrentHashMap::new), // executionStatus
               MarshallUtil.unmarshallString(input),     // protocol
 
-              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)), // clientNotes
-              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)), // authNotes
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new), // clientNotes
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new), // authNotes
               KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // requiredActions
-              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)) // userSessionNotes
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new) // userSessionNotes
             );
         }
 
@@ -283,13 +286,35 @@ public class AuthenticationSessionEntity implements Serializable {
                     MarshallUtil.unmarshallString(input),     // action
                     KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // clientScopes
 
-                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, size -> new ConcurrentHashMap<>(size)), // executionStatus
+                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, ConcurrentHashMap::new), // executionStatus
                     MarshallUtil.unmarshallString(input),     // protocol
 
-                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)), // clientNotes
-                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)), // authNotes
+                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new), // clientNotes
+                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new), // authNotes
                     KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // requiredActions
-                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, size -> new ConcurrentHashMap<>(size)) // userSessionNotes
+                    KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::new) // userSessionNotes
+            );
+        }
+
+        public AuthenticationSessionEntity readObjectVersion3(ObjectInput input) throws IOException, ClassNotFoundException {
+            return new AuthenticationSessionEntity(
+                    MarshallUtil.unmarshallString(input),     // clientUUID
+
+                    MarshallUtil.unmarshallString(input),     // authUserId
+
+                    input.readInt(),                          // timestamp
+
+                    MarshallUtil.unmarshallString(input),     // redirectUri
+                    MarshallUtil.unmarshallString(input),     // action
+                    KeycloakMarshallUtil.readCollectionV2(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // clientScopes
+
+                    KeycloakMarshallUtil.readMapV2(input, KeycloakMarshallUtil.STRING_EXT, EXECUTION_STATUS_EXT, ConcurrentHashMap::new), // executionStatus
+                    MarshallUtil.unmarshallString(input),     // protocol
+
+                    KeycloakMarshallUtil.readMapOfString(input), // clientNotes
+                    KeycloakMarshallUtil.readMapOfString(input), // authNotes
+                    KeycloakMarshallUtil.readCollectionV2(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet),  // requiredActions
+                    KeycloakMarshallUtil.readMapOfString(input) // userSessionNotes
             );
         }
     }

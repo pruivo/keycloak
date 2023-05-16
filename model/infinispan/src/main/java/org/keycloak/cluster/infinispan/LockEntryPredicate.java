@@ -19,6 +19,7 @@
 package org.keycloak.cluster.infinispan;
 
 import org.infinispan.commons.marshall.Externalizer;
+import org.infinispan.commons.marshall.MarshallUtil;
 import org.infinispan.commons.marshall.SerializeWith;
 import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
@@ -26,6 +27,7 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,11 +59,12 @@ public class LockEntryPredicate implements Predicate<Map.Entry<String, Serializa
     public static class ExternalizerImpl implements Externalizer<LockEntryPredicate> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, LockEntryPredicate obj) throws IOException {
             output.writeByte(VERSION_1);
-            KeycloakMarshallUtil.writeCollection(obj.removedNodesAddresses, KeycloakMarshallUtil.STRING_EXT, output);
+            MarshallUtil.marshallCollection(obj.removedNodesAddresses, output, KeycloakMarshallUtil.STRING_WRITER);
         }
 
         @Override
@@ -69,6 +72,8 @@ public class LockEntryPredicate implements Predicate<Map.Entry<String, Serializa
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -78,6 +83,10 @@ public class LockEntryPredicate implements Predicate<Map.Entry<String, Serializa
             return new LockEntryPredicate(
                     KeycloakMarshallUtil.readCollection(input, KeycloakMarshallUtil.STRING_EXT, ConcurrentHashMap::newKeySet)
             );
+        }
+
+        public LockEntryPredicate readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            return new LockEntryPredicate(MarshallUtil.unmarshallCollection(input, HashSet::new, MarshallUtil::unmarshallString));
         }
     }
 

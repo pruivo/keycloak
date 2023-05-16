@@ -112,15 +112,16 @@ public class ClientRemovedEvent extends InvalidationEvent implements RealmCacheI
     public static class ExternalizerImpl implements Externalizer<ClientRemovedEvent> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, ClientRemovedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(obj.clientUuid, output);
             MarshallUtil.marshallString(obj.clientId, output);
             MarshallUtil.marshallString(obj.realmId, output);
-            KeycloakMarshallUtil.writeMap(obj.clientRoles, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+            KeycloakMarshallUtil.writeMapOfString(obj.clientRoles, output);
 
             log.tracev("Write; clientId={0}", obj.clientId);
         }
@@ -130,6 +131,8 @@ public class ClientRemovedEvent extends InvalidationEvent implements RealmCacheI
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -141,7 +144,19 @@ public class ClientRemovedEvent extends InvalidationEvent implements RealmCacheI
             res.clientId = MarshallUtil.unmarshallString(input);
             res.realmId = MarshallUtil.unmarshallString(input);
             res.clientRoles = KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT,
-              size -> new ConcurrentHashMap<>(size));
+                    ConcurrentHashMap::new);
+
+            log.tracev("Read; clientId={0}", res.clientId);
+
+            return res;
+        }
+
+        public ClientRemovedEvent readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            ClientRemovedEvent res = new ClientRemovedEvent();
+            res.clientUuid = MarshallUtil.unmarshallString(input);
+            res.clientId = MarshallUtil.unmarshallString(input);
+            res.realmId = MarshallUtil.unmarshallString(input);
+            res.clientRoles = KeycloakMarshallUtil.readMapOfString(input);
 
             log.tracev("Read; clientId={0}", res.clientId);
 

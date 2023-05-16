@@ -96,17 +96,17 @@ public class RootAuthenticationSessionEntity extends SessionEntity {
     public static class ExternalizerImpl implements Externalizer<RootAuthenticationSessionEntity> {
 
         private static final int VERSION_1 = 1;
+        private static final int VERSION_2 = 2;
 
         @Override
         public void writeObject(ObjectOutput output, RootAuthenticationSessionEntity value) throws IOException {
-            output.writeByte(VERSION_1);
+            output.writeByte(VERSION_2);
 
             MarshallUtil.marshallString(value.getRealmId(), output);
-
             MarshallUtil.marshallString(value.id, output);
             output.writeInt(value.timestamp);
 
-            KeycloakMarshallUtil.writeMap(value.authenticationSessions, KeycloakMarshallUtil.STRING_EXT, AuthenticationSessionEntity.ExternalizerImpl.INSTANCE, output);
+            KeycloakMarshallUtil.writeMapV2(value.authenticationSessions, KeycloakMarshallUtil.STRING_EXT, AuthenticationSessionEntity.ExternalizerImpl.INSTANCE, output);
         }
 
         @Override
@@ -114,6 +114,8 @@ public class RootAuthenticationSessionEntity extends SessionEntity {
             switch (input.readByte()) {
                 case VERSION_1:
                     return readObjectVersion1(input);
+                case VERSION_2:
+                    return readObjectVersion2(input);
                 default:
                     throw new IOException("Unknown version");
             }
@@ -126,7 +128,16 @@ public class RootAuthenticationSessionEntity extends SessionEntity {
               MarshallUtil.unmarshallString(input),     // id
               input.readInt(),                          // timestamp
 
-              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, AuthenticationSessionEntity.ExternalizerImpl.INSTANCE, size -> new ConcurrentHashMap<>(size)) // authenticationSessions
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, AuthenticationSessionEntity.ExternalizerImpl.INSTANCE, ConcurrentHashMap::new) // authenticationSessions
+            );
+        }
+
+        public RootAuthenticationSessionEntity readObjectVersion2(ObjectInput input) throws IOException, ClassNotFoundException {
+            return new RootAuthenticationSessionEntity(
+                    MarshallUtil.unmarshallString(input),     // realmId
+                    MarshallUtil.unmarshallString(input),     // id
+                    input.readInt(),                          // timestamp
+                    KeycloakMarshallUtil.readMapV2(input, KeycloakMarshallUtil.STRING_EXT, AuthenticationSessionEntity.ExternalizerImpl.INSTANCE, ConcurrentHashMap::new) // authenticationSessions
             );
         }
     }
