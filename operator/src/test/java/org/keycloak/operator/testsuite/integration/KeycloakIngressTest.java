@@ -171,6 +171,7 @@ public class KeycloakIngressTest extends BaseOperatorTest {
         var kc = K8sUtils.getDefaultKeycloakDeployment();
         kc.getSpec().setIngressSpec(new IngressSpec());
         kc.getSpec().getIngressSpec().setIngressEnabled(true);
+        kc.getSpec().getIngressSpec().setAnnotations(Map.of("haproxy.router.openshift.io/disable_cookies", "true"));
         K8sUtils.deployKeycloak(k8sclient, kc, true);
 
         var ingress = new KeycloakIngress(k8sclient, kc);
@@ -206,6 +207,7 @@ public class KeycloakIngressTest extends BaseOperatorTest {
                     assertThat(i.getMetadata().getLabels().entrySet().containsAll(labels.entrySet())).isTrue(); // additional labels should not be overwritten
                     assertEquals("HTTPS", i.getMetadata().getAnnotations().get("nginx.ingress.kubernetes.io/backend-protocol"));
                     assertEquals("passthrough", i.getMetadata().getAnnotations().get("route.openshift.io/termination"));
+                    assertEquals("true", i.getMetadata().getAnnotations().get("haproxy.router.openshift.io/disable_cookies"));
                     assertEquals(Constants.KEYCLOAK_HTTPS_PORT, i.getSpec().getDefaultBackend().getService().getPort().getNumber());
                 });
 

@@ -28,18 +28,20 @@ import org.keycloak.operator.crds.v2alpha1.deployment.spec.TransactionsSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpec;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasProperty;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
+import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class CRSerializationTest {
+
+    private static final Map<String, String> CUSTOM_INGRESS_ANNOTATION = Map.of(
+            "myAnnotation", "myValue",
+            "anotherAnnotation", "anotherValue"
+    );
 
     @Test
     public void testDeserialization() {
@@ -49,6 +51,7 @@ public class CRSerializationTest {
         assertEquals("my-image", keycloak.getSpec().getImage());
         assertEquals("my-tls-secret", keycloak.getSpec().getHttpSpec().getTlsSecret());
         assertFalse(keycloak.getSpec().getIngressSpec().isIngressEnabled());
+        assertEquals(CUSTOM_INGRESS_ANNOTATION, keycloak.getSpec().getIngressSpec().getAnnotations());
 
         final TransactionsSpec transactionsSpec = keycloak.getSpec().getTransactionsSpec();
         assertThat(transactionsSpec, notNullValue());

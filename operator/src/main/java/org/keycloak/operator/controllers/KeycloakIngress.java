@@ -25,6 +25,7 @@ import org.keycloak.operator.crds.v2alpha1.deployment.spec.IngressSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatusBuilder;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -64,15 +65,28 @@ public class KeycloakIngress extends OperatorManagedResource implements StatusUp
 
     private Ingress newIngress() {
         var port = KeycloakService.getServicePort(keycloak);
-        var backendProtocol = (!isTlsConfigured(keycloak)) ? "HTTP" : "HTTPS";
-        var tlsTermination = "HTTP".equals(backendProtocol) ? "edge" : "passthrough";
+        var annotations = new HashMap<String, String>();
+
+        // set default annotations
+        if (isTlsConfigured(keycloak)) {
+            annotations.put("nginx.ingress.kubernetes.io/backend-protocol", "HTTPS");
+            annotations.put("route.openshift.io/termination", "passthrough");
+        } else {
+            annotations.put("nginx.ingress.kubernetes.io/backend-protocol", "HTTP");
+            annotations.put("route.openshift.io/termination", "edge");
+        }
+
+        if (keycloak.getSpec().getIngressSpec() != null &&
+                keycloak.getSpec().getIngressSpec().getAnnotations() != null) {
+            annotations.putAll(keycloak.getSpec().getIngressSpec().getAnnotations());
+
+        }
 
         Ingress ingress = new IngressBuilder()
                 .withNewMetadata()
                     .withName(getName())
                     .withNamespace(getNamespace())
-                    .addToAnnotations("nginx.ingress.kubernetes.io/backend-protocol", backendProtocol)
-                    .addToAnnotations("route.openshift.io/termination", tlsTermination)
+                    .addToAnnotations(annotations)
                 .endMetadata()
                 .withNewSpec()
                     .withNewDefaultBackend()
