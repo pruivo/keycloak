@@ -30,7 +30,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.cache.authorization.CachedStoreFactoryProvider;
 import org.keycloak.models.cache.authorization.CachedStoreProviderFactory;
-import org.keycloak.models.cache.infinispan.entities.Revisioned;
+import org.keycloak.models.cache.infinispan.CacheManager;
 import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
 
 /**
@@ -64,9 +64,8 @@ public class InfinispanCacheStoreFactoryProviderFactory implements CachedStorePr
         if (storeCache == null) {
             synchronized (this) {
                 if (storeCache == null) {
-                    Cache<String, Revisioned> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME);
-                    Cache<String, Long> revisions = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME);
-                    storeCache = new StoreFactoryCacheManager(cache, revisions);
+                    Cache<String, CacheManager.Wrapper> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME);
+                    storeCache = new StoreFactoryCacheManager(cache);
                     ClusterProvider cluster = session.getProvider(ClusterProvider.class);
 
                     cluster.registerListener(AUTHORIZATION_INVALIDATION_EVENTS, (ClusterEvent event) -> {

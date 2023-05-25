@@ -7,10 +7,12 @@ import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.cache.infinispan.entities.Revisioned;
 
+import java.util.AbstractMap;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -55,86 +57,43 @@ import java.util.function.Predicate;
  */
 public abstract class CacheManager {
 
-    protected final Cache<String, Long> revisions;
-    protected final Cache<String, Revisioned> cache;
-    protected final UpdateCounter counter = new UpdateCounter();
+    private final Cache<String, Wrapper> cache;
+    private final UpdateCounter counter = new UpdateCounter();
 
-    public CacheManager(Cache<String, Revisioned> cache, Cache<String, Long> revisions) {
+    public CacheManager(Cache<String, Wrapper> cache) {
         this.cache = cache;
-        this.revisions = revisions;
     }
 
     protected abstract Logger getLogger();
 
-    public Cache<String, Revisioned> getCache() {
-        return cache;
+    public boolean containsId(String id) {
+        Wrapper wrapper = cache.get(id);
+        return wrapper != null && wrapper.getObject() != null;
     }
 
     public long getCurrentCounter() {
         return counter.current();
     }
 
-    public Long getCurrentRevision(String id) {
-        Long revision = revisions.get(id);
-        if (revision == null) {
-            revision = counter.current();
-        }
-
-        return revision;
-    }
-
-    public void endRevisionBatch() {
-        try {
-            revisions.endBatch(true);
-        } catch (Exception e) {
-        }
-
+    public long getCurrentRevision(String id) {
+        Wrapper wrapper = cache.get(id);
+        return wrapper == null ? counter.current() : wrapper.getCurrentRevision();
     }
 
     public <T extends Revisioned> T get(String id, Class<T> type) {
-        Revisioned o = (Revisioned)cache.get(id);
-        if (o == null) {
-            return null;
-        }
-        Long rev = revisions.get(id);
-        if (rev == null) {
+        Wrapper wrapper = cache.get(id);
+        if (wrapper == null) {
             if (getLogger().isTraceEnabled()) {
                 getLogger().tracev("get() missing rev {0}", id);
             }
-            /* id is no longer in this.revisions
-             ** => remove it also from this.cache
-             ** to come back to a consistent state
-             ** this allows caching the current version again
-             */
-            cache.remove(id);
             return null;
         }
-        long oRev = o.getRevision() == null ? -1L : o.getRevision().longValue();
-        if (rev > oRev) {
-            if (getLogger().isTraceEnabled()) {
-                getLogger().tracev("get() rev: {0} o.rev: {1}", rev.longValue(), oRev);
-            }
-            // the object in this.cache is outdated => remove it
-            cache.remove(id);
-            return null;
-        }
-        return o != null && type.isInstance(o) ? type.cast(o) : null;
+        Revisioned o = wrapper.getObject();
+        return type.isInstance(o) ? type.cast(o) : null;
     }
 
-    public Object invalidateObject(String id) {
-        Revisioned removed = (Revisioned)cache.remove(id);
-
-        if (getLogger().isTraceEnabled()) {
-            getLogger().tracef("Removed key='%s', value='%s' from cache", id, removed);
-        }
-
-        bumpVersion(id);
-        return removed;
-    }
-
-    protected void bumpVersion(String id) {
-        long next = counter.next();
-        Object rev = revisions.put(id, next);
+    public void invalidateObject(String id) {
+        cache.compute(id, this::invalidateFunction);
     }
 
     public void addRevisioned(Revisioned object, long startupRevision) {
@@ -142,53 +101,13 @@ public abstract class CacheManager {
     }
 
     public void addRevisioned(Revisioned object, long startupRevision, long lifespan) {
-        //startRevisionBatch();
-        String id = object.getId();
-        try {
-            //revisions.getAdvancedCache().lock(id);
-            Long rev = revisions.get(id);
-            if (rev == null) {
-                rev = counter.current();
-                revisions.put(id, rev);
-            }
-            revisions.startBatch();
-            if (!revisions.getAdvancedCache().lock(id)) {
-                if (getLogger().isTraceEnabled()) {
-                    getLogger().tracev("Could not obtain version lock: {0}", id);
-                }
-                return;
-            }
-            rev = revisions.get(id);
-            if (rev == null) {
-                return;
-            }
-            if (rev > startupRevision) { // revision is ahead transaction start. Other transaction updated in the meantime. Don't cache
-                if (getLogger().isTraceEnabled()) {
-                    getLogger().tracev("Skipped cache. Current revision {0}, Transaction start revision {1}", object.getRevision(), startupRevision);
-                }
-                return;
-            }
-            if (rev.equals(object.getRevision())) {
-                cache.putForExternalRead(id, object);
-                return;
-            }
-            if (rev > object.getRevision()) { // revision is ahead, don't cache
-                if (getLogger().isTraceEnabled()) getLogger().tracev("Skipped cache. Object revision {0}, Cache revision {1}", object.getRevision(), rev);
-                return;
-            }
-            // revisions cache has a lower value than the object.revision, so update revision and add it to cache
-            revisions.put(id, object.getRevision());
-            if (lifespan < 0) cache.putForExternalRead(id, object);
-            else cache.putForExternalRead(id, object, lifespan, TimeUnit.MILLISECONDS);
-        } finally {
-            endRevisionBatch();
-        }
-
+        cache.compute(object.getId(),
+                (id, wrapper) -> addRevisionedFunction(wrapper, object, startupRevision),
+                lifespan, TimeUnit.MILLISECONDS);
     }
 
     public void clear() {
         cache.clear();
-        revisions.clear();
     }
 
     public void addInvalidations(Predicate<Map.Entry<String, Revisioned>> predicate, Set<String> invalidations) {
@@ -202,11 +121,21 @@ public abstract class CacheManager {
         return cache
                 .entrySet()
                 .stream()
+                .filter(CacheManager::notNullRevisioned)
+                .map(CacheManager::toEntry)
                 .filter(predicate).iterator();
     }
 
+    private static Map.Entry<String, Revisioned> toEntry(Map.Entry<String, Wrapper> entry) {
+        return new AbstractMap.SimpleEntry<>(entry.getKey(), entry.getValue().getObject());
+    }
 
-    public void sendInvalidationEvents(KeycloakSession session, Collection<InvalidationEvent> invalidationEvents, String eventKey) {
+    private static boolean notNullRevisioned(Map.Entry<String, Wrapper> entry) {
+        return Objects.nonNull(entry.getValue().getObject());
+    }
+
+
+    public static void sendInvalidationEvents(KeycloakSession session, Collection<InvalidationEvent> invalidationEvents, String eventKey) {
         ClusterProvider clusterProvider = session.getProvider(ClusterProvider.class);
 
         // Maybe add InvalidationEvent, which will be collection of all invalidationEvents? That will reduce cluster traffic even more.
@@ -230,4 +159,64 @@ public abstract class CacheManager {
 
     protected abstract void addInvalidationsFromEvent(InvalidationEvent event, Set<String> invalidations);
 
+    private Wrapper invalidateFunction(String id, Wrapper current) {
+        if (getLogger().isTraceEnabled()) {
+            getLogger().tracef("Removed key='%s', value='%s' from cache", id, current.getObject());
+        }
+        return new InvalidatedWrapper(counter.next());
+    }
+
+    private Wrapper addRevisionedFunction(Wrapper oldWrapper, Revisioned object, long startupRevision) {
+        long rev = oldWrapper == null ? counter.current() : oldWrapper.getCurrentRevision();
+        if (rev > startupRevision) { // revision is ahead transaction start. Other transaction updated in the meantime. Don't cache
+            if (getLogger().isTraceEnabled()) {
+                getLogger().tracev("Skipped cache. Current revision {0}, Transaction start revision {1}", rev, startupRevision);
+            }
+            return oldWrapper;
+        }
+        if (rev > object.getRevision()) { // revision is ahead, don't cache
+            if (getLogger().isTraceEnabled()) getLogger().tracev("Skipped cache. Object revision {0}, Cache revision {1}", object.getRevision(), rev);
+            return oldWrapper;
+        }
+        // revisions cache has a lower or equal value than the object.revision, so update revision and add it to cache
+        return new RevisionedWrapper(object);
+    }
+
+    public interface Wrapper {
+        long getCurrentRevision();
+        default Revisioned getObject() {
+            return null;
+        }
+    }
+
+    private static class InvalidatedWrapper implements Wrapper {
+        private final long revision;
+
+        InvalidatedWrapper(long revision) {
+            this.revision = revision;
+        }
+
+        @Override
+        public long getCurrentRevision() {
+            return revision;
+        }
+    }
+
+    private static class RevisionedWrapper implements Wrapper {
+        private final Revisioned object;
+
+        RevisionedWrapper(Revisioned object) {
+            this.object = object;
+        }
+
+        @Override
+        public long getCurrentRevision() {
+            return object.getRevision();
+        }
+
+        @Override
+        public Revisioned getObject() {
+            return object;
+        }
+    }
 }

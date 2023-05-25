@@ -52,9 +52,8 @@ public class InfinispanCacheRealmProviderFactory implements CacheRealmProviderFa
         if (realmCache == null) {
             synchronized (this) {
                 if (realmCache == null) {
-                    Cache<String, Revisioned> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.REALM_CACHE_NAME);
-                    Cache<String, Long> revisions = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME);
-                    realmCache = new RealmCacheManager(cache, revisions);
+                    Cache<String, CacheManager.Wrapper> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.REALM_CACHE_NAME);
+                    realmCache = new RealmCacheManager(cache);
 
                     ClusterProvider cluster = session.getProvider(ClusterProvider.class);
                     cluster.registerListener(REALM_INVALIDATION_EVENTS, (ClusterEvent event) -> {

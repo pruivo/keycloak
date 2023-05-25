@@ -350,26 +350,18 @@ public class RealmCacheSession implements CacheRealmProvider {
 
             @Override
             public void commit() {
-                try {
-                    if (clearAll) {
-                        cache.clear();
-                    }
-                    runInvalidations();
-                    transactionActive = false;
-                } finally {
-                    cache.endRevisionBatch();
+                if (clearAll) {
+                    cache.clear();
                 }
+                runInvalidations();
+                transactionActive = false;
             }
 
             @Override
             public void rollback() {
-                try {
-                    setRollbackOnly = true;
-                    runInvalidations();
-                    transactionActive = false;
-                } finally {
-                    cache.endRevisionBatch();
-                }
+                setRollbackOnly = true;
+                runInvalidations();
+                transactionActive = false;
             }
 
             @Override

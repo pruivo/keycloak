@@ -18,7 +18,6 @@
 package org.keycloak.connections.infinispan;
 
 import org.infinispan.client.hotrod.ProtocolVersion;
-import org.infinispan.commons.dataconversion.MediaType;
 import org.infinispan.configuration.cache.CacheMode;
 import org.infinispan.configuration.cache.Configuration;
 import org.infinispan.configuration.cache.ConfigurationBuilder;
@@ -29,9 +28,6 @@ import org.infinispan.jboss.marshalling.core.JBossUserMarshaller;
 import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.manager.EmbeddedCacheManager;
 import org.infinispan.persistence.remote.configuration.RemoteStoreConfigurationBuilder;
-import org.infinispan.transaction.LockingMode;
-import org.infinispan.transaction.TransactionMode;
-import org.infinispan.transaction.lookup.EmbeddedTransactionManagerLookup;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.cluster.ClusterEvent;
@@ -163,34 +159,10 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
     protected void initContainerManaged(EmbeddedCacheManager cacheManager) {
         this.cacheManager = cacheManager;
         containerManaged = true;
-
-        long realmRevisionsMaxEntries = this.cacheManager.getCache(InfinispanConnectionProvider.REALM_CACHE_NAME).getCacheConfiguration().memory().size();
-        realmRevisionsMaxEntries = realmRevisionsMaxEntries > 0
-                ? 2 * realmRevisionsMaxEntries
-                : InfinispanConnectionProvider.REALM_REVISIONS_CACHE_DEFAULT_MAX;
-
-        this.cacheManager.defineConfiguration(InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME, getRevisionCacheConfig(realmRevisionsMaxEntries));
-        this.cacheManager.getCache(InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME, true);
-
-        long userRevisionsMaxEntries = this.cacheManager.getCache(InfinispanConnectionProvider.USER_CACHE_NAME).getCacheConfiguration().memory().size();
-        userRevisionsMaxEntries = userRevisionsMaxEntries > 0
-                ? 2 * userRevisionsMaxEntries
-                : InfinispanConnectionProvider.USER_REVISIONS_CACHE_DEFAULT_MAX;
-
-        this.cacheManager.defineConfiguration(InfinispanConnectionProvider.USER_REVISIONS_CACHE_NAME, getRevisionCacheConfig(userRevisionsMaxEntries));
-        this.cacheManager.getCache(InfinispanConnectionProvider.USER_REVISIONS_CACHE_NAME, true);
         this.cacheManager.getCache(InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME, true);
         this.cacheManager.getCache(InfinispanConnectionProvider.AUTHENTICATION_SESSIONS_CACHE_NAME, true);
         this.cacheManager.getCache(InfinispanConnectionProvider.KEYS_CACHE_NAME, true);
         this.cacheManager.getCache(InfinispanConnectionProvider.ACTION_TOKEN_CACHE, true);
-
-        long authzRevisionsMaxEntries = this.cacheManager.getCache(InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME).getCacheConfiguration().memory().size();
-        authzRevisionsMaxEntries = authzRevisionsMaxEntries > 0
-                ? 2 * authzRevisionsMaxEntries
-                : InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX;
-
-        this.cacheManager.defineConfiguration(InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME, getRevisionCacheConfig(authzRevisionsMaxEntries));
-        this.cacheManager.getCache(InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME, true);
 
         this.topologyInfo = new TopologyInfo(this.cacheManager, config, false);
 
@@ -336,22 +308,6 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
         cacheManager.defineConfiguration(InfinispanConnectionProvider.WORK_CACHE_NAME, replicationEvictionCacheConfiguration);
         cacheManager.getCache(InfinispanConnectionProvider.WORK_CACHE_NAME, true);
 
-        long realmRevisionsMaxEntries = cacheManager.getCache(InfinispanConnectionProvider.REALM_CACHE_NAME).getCacheConfiguration().memory().size();
-        realmRevisionsMaxEntries = realmRevisionsMaxEntries > 0
-                ? 2 * realmRevisionsMaxEntries
-                : InfinispanConnectionProvider.REALM_REVISIONS_CACHE_DEFAULT_MAX;
-
-        cacheManager.defineConfiguration(InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME, getRevisionCacheConfig(realmRevisionsMaxEntries));
-        cacheManager.getCache(InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME, true);
-
-        long userRevisionsMaxEntries = cacheManager.getCache(InfinispanConnectionProvider.USER_CACHE_NAME).getCacheConfiguration().memory().size();
-        userRevisionsMaxEntries = userRevisionsMaxEntries > 0
-                ? 2 * userRevisionsMaxEntries
-                : InfinispanConnectionProvider.USER_REVISIONS_CACHE_DEFAULT_MAX;
-
-        cacheManager.defineConfiguration(InfinispanConnectionProvider.USER_REVISIONS_CACHE_NAME, getRevisionCacheConfig(userRevisionsMaxEntries));
-        cacheManager.getCache(InfinispanConnectionProvider.USER_REVISIONS_CACHE_NAME, true);
-
         cacheManager.defineConfiguration(InfinispanConnectionProvider.KEYS_CACHE_NAME, getKeysCacheConfig());
         cacheManager.getCache(InfinispanConnectionProvider.KEYS_CACHE_NAME, true);
 
@@ -365,35 +321,6 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
         }
         cacheManager.defineConfiguration(InfinispanConnectionProvider.ACTION_TOKEN_CACHE, actionTokenCacheConfigBuilder.build());
         cacheManager.getCache(InfinispanConnectionProvider.ACTION_TOKEN_CACHE, true);
-
-        long authzRevisionsMaxEntries = cacheManager.getCache(InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME).getCacheConfiguration().memory().size();
-        authzRevisionsMaxEntries = authzRevisionsMaxEntries > 0
-                ? 2 * authzRevisionsMaxEntries
-                : InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX;
-
-        cacheManager.defineConfiguration(InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME, getRevisionCacheConfig(authzRevisionsMaxEntries));
-        cacheManager.getCache(InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME, true);
-    }
-
-    private Configuration getRevisionCacheConfig(long maxEntries) {
-        ConfigurationBuilder cb = createCacheConfigurationBuilder();
-        cb.simpleCache(false);
-        cb.invocationBatching().enable().transaction().transactionMode(TransactionMode.TRANSACTIONAL);
-
-        // Use Embedded manager even in managed ( wildfly/eap ) environment. We don't want infinispan to participate in global transaction
-        cb.transaction().transactionManagerLookup(new EmbeddedTransactionManagerLookup());
-
-        cb.transaction().lockingMode(LockingMode.PESSIMISTIC);
-        if (cb.memory().storage().canStoreReferences()) {
-            cb.encoding().mediaType(MediaType.APPLICATION_OBJECT_TYPE);
-        }
-
-        cb.memory()
-                .evictionStrategy(EvictionStrategy.REMOVE)
-                .evictionType(EvictionType.COUNT)
-                .size(maxEntries);
-
-        return cb.build();
     }
 
     // Used for cross-data centers scenario. Usually integration with external JDG server, which itself handles communication between DCs.

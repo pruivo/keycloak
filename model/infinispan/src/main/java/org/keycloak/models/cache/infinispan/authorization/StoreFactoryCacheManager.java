@@ -19,12 +19,10 @@ package org.keycloak.models.cache.infinispan.authorization;
 import org.infinispan.Cache;
 import org.jboss.logging.Logger;
 import org.keycloak.models.cache.infinispan.CacheManager;
-import org.keycloak.models.cache.infinispan.RealmCacheManager;
 import org.keycloak.models.cache.infinispan.authorization.events.AuthorizationCacheInvalidationEvent;
 import org.keycloak.models.cache.infinispan.authorization.stream.InResourcePredicate;
 import org.keycloak.models.cache.infinispan.authorization.stream.InResourceServerPredicate;
 import org.keycloak.models.cache.infinispan.authorization.stream.InScopePredicate;
-import org.keycloak.models.cache.infinispan.entities.Revisioned;
 import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
 
 import java.util.Objects;
@@ -37,8 +35,8 @@ import java.util.Set;
 public class StoreFactoryCacheManager extends CacheManager {
     private static final Logger logger = Logger.getLogger(StoreFactoryCacheManager.class);
 
-    public StoreFactoryCacheManager(Cache<String, Revisioned> cache, Cache<String, Long> revisions) {
-        super(cache, revisions);
+    public StoreFactoryCacheManager(Cache<String, Wrapper> cache) {
+        super(cache);
     }
     @Override
     protected Logger getLogger() {

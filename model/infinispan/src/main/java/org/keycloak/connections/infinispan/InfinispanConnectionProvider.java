@@ -27,13 +27,7 @@ import org.keycloak.provider.Provider;
 public interface InfinispanConnectionProvider extends Provider {
 
     String REALM_CACHE_NAME = "realms";
-    String REALM_REVISIONS_CACHE_NAME = "realmRevisions";
-    int REALM_REVISIONS_CACHE_DEFAULT_MAX = 20000;
-
     String USER_CACHE_NAME = "users";
-    String USER_REVISIONS_CACHE_NAME = "userRevisions";
-    int USER_REVISIONS_CACHE_DEFAULT_MAX = 100000;
-
     String USER_SESSION_CACHE_NAME = "sessions";
     String CLIENT_SESSION_CACHE_NAME = "clientSessions";
     String OFFLINE_USER_SESSION_CACHE_NAME = "offlineSessions";
@@ -42,8 +36,6 @@ public interface InfinispanConnectionProvider extends Provider {
     String AUTHENTICATION_SESSIONS_CACHE_NAME = "authenticationSessions";
     String WORK_CACHE_NAME = "work";
     String AUTHORIZATION_CACHE_NAME = "authorization";
-    String AUTHORIZATION_REVISIONS_CACHE_NAME = "authorizationRevisions";
-    int AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX = 20000;
 
     String ACTION_TOKEN_CACHE = "actionTokens";
     int ACTION_TOKEN_CACHE_DEFAULT_MAX = -1;

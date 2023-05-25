@@ -20,7 +20,6 @@ package org.keycloak.models.cache.infinispan;
 import org.infinispan.Cache;
 import org.jboss.logging.Logger;
 import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
-import org.keycloak.models.cache.infinispan.entities.Revisioned;
 import org.keycloak.models.cache.infinispan.events.UserCacheInvalidationEvent;
 import org.keycloak.models.cache.infinispan.stream.InRealmPredicate;
 
@@ -36,21 +35,14 @@ public class UserCacheManager extends CacheManager {
 
     protected volatile boolean enabled = true;
 
-    public UserCacheManager(Cache<String, Revisioned> cache, Cache<String, Long> revisions) {
-        super(cache, revisions);
+    public UserCacheManager(Cache<String, Wrapper> cache) {
+        super(cache);
     }
 
     @Override
     protected Logger getLogger() {
         return logger;
     }
-
-    @Override
-    public void clear() {
-        cache.clear();
-        revisions.clear();
-    }
-
 
     public void userUpdatedInvalidations(String userId, String username, String email, String realmId, Set<String> invalidations) {
         invalidations.add(userId);

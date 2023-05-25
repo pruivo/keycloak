@@ -49,6 +49,7 @@ import org.keycloak.models.KeycloakTransaction;
 import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.cache.authorization.CachedStoreFactoryProvider;
+import org.keycloak.models.cache.infinispan.CacheManager;
 import org.keycloak.models.cache.infinispan.authorization.entities.CachedPermissionTicket;
 import org.keycloak.models.cache.infinispan.authorization.entities.CachedPolicy;
 import org.keycloak.models.cache.infinispan.authorization.entities.CachedResource;
@@ -100,7 +101,6 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
     protected Set<String> invalidations = new HashSet<>();
     protected Set<InvalidationEvent> invalidationEvents = new HashSet<>(); // Events to be sent across cluster
 
-    protected boolean clearAll;
     protected final long startupRevision;
     protected StoreFactory delegate;
     protected KeycloakSession session;
@@ -207,23 +207,15 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
 
             @Override
             public void commit() {
-                try {
-                    runInvalidations();
-                    transactionActive = false;
-                } finally {
-                    cache.endRevisionBatch();
-                }
+                runInvalidations();
+                transactionActive = false;
             }
 
             @Override
             public void rollback() {
-                try {
-                    setRollbackOnly = true;
-                    runInvalidations();
-                    transactionActive = false;
-                } finally {
-                    cache.endRevisionBatch();
-                }
+                setRollbackOnly = true;
+                runInvalidations();
+                transactionActive = false;
             }
 
             @Override
@@ -248,7 +240,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
             cache.invalidateObject(id);
         }
 
-        cache.sendInvalidationEvents(session, invalidationEvents, InfinispanCacheStoreFactoryProviderFactory.AUTHORIZATION_INVALIDATION_EVENTS);
+        CacheManager.sendInvalidationEvents(session, invalidationEvents, InfinispanCacheStoreFactoryProviderFactory.AUTHORIZATION_INVALIDATION_EVENTS);
     }
 
 
@@ -1230,7 +1222,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
 
     void cachePolicy(Policy model) {
         String id = model.getId();
-        if (cache.getCache().containsKey(id)) {
+        if (cache.containsId(id)) {
             return;
         }
         if (!modelMightExist(id)) {
@@ -1247,7 +1239,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
 
     void cacheResource(Resource model) {
         String id = model.getId();
-        if (cache.getCache().containsKey(id)) {
+        if (cache.containsId(id)) {
             return;
         }
         Long loaded = cache.getCurrentRevision(id);
@@ -1260,7 +1252,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
 
     void cacheScope(Scope model) {
         String id = model.getId();
-        if (cache.getCache().containsKey(id)) {
+        if (cache.containsId(id)) {
             return;
         }
         Long loaded = cache.getCurrentRevision(id);

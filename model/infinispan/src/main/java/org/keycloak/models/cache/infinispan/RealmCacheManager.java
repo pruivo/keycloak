@@ -41,8 +41,8 @@ public class RealmCacheManager extends CacheManager {
         return logger;
     }
 
-    public RealmCacheManager(Cache<String, Revisioned> cache, Cache<String, Long> revisions) {
-        super(cache, revisions);
+    public RealmCacheManager(Cache<String, Wrapper> cache) {
+        super(cache);
     }
 
 
