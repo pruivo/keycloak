@@ -25,7 +25,6 @@ import org.keycloak.operator.crds.v2alpha1.deployment.spec.IngressSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatusBuilder;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Optional;
 
@@ -57,7 +56,7 @@ public class KeycloakIngress extends OperatorManagedResource implements StatusUp
             if (resultIngress.getMetadata().getAnnotations() == null) {
                 resultIngress.getMetadata().setAnnotations(new HashMap<>());
             }
-            resultIngress.getMetadata().getAnnotations().putAll(defaultIngress.getMetadata().getAnnotations());
+            resultIngress.getMetadata().setAnnotations(defaultIngress.getMetadata().getAnnotations());
             resultIngress.setSpec(defaultIngress.getSpec());
             return Optional.of(resultIngress);
         }
