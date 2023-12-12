@@ -94,7 +94,7 @@ public class PodTemplateTest extends BaseOperatorTest {
                 .withName("foo")
                 .endMetadata()
                 .build();
-        plainKc.getSpec().getUnsupported().setPodTeplate(podTemplate);
+        plainKc.getSpec().getUnsupported().setPodTemplate(podTemplate);
 
         // Act
         K8sUtils.set(k8sclient, plainKc);
@@ -122,7 +122,7 @@ public class PodTemplateTest extends BaseOperatorTest {
                     .withNamespace(wrongNamespace)
                     .endMetadata()
                     .build();
-            plainKc.getSpec().getUnsupported().setPodTeplate(podTemplate);
+            plainKc.getSpec().getUnsupported().setPodTemplate(podTemplate);
 
             // Act
             K8sUtils.set(k8sclient, plainKc);
@@ -153,7 +153,7 @@ public class PodTemplateTest extends BaseOperatorTest {
                 .endContainer()
                 .endSpec()
                 .build();
-        plainKc.getSpec().getUnsupported().setPodTeplate(podTemplate);
+        plainKc.getSpec().getUnsupported().setPodTemplate(podTemplate);
 
         // Act
         K8sUtils.set(k8sclient, plainKc);
@@ -179,7 +179,7 @@ public class PodTemplateTest extends BaseOperatorTest {
                 .endContainer()
                 .endSpec()
                 .build();
-        plainKc.getSpec().getUnsupported().setPodTeplate(podTemplate);
+        plainKc.getSpec().getUnsupported().setPodTemplate(podTemplate);
 
         // Act
         K8sUtils.set(k8sclient, plainKc);
@@ -213,7 +213,7 @@ public class PodTemplateTest extends BaseOperatorTest {
                 .build();
 
         var plainKc = getEmptyPodTemplateKeycloak();
-        plainKc.getSpec().getUnsupported().setPodTeplate(podTemplate);
+        plainKc.getSpec().getUnsupported().setPodTemplate(podTemplate);
 
         // Act
         K8sUtils.set(k8sclient, plainKc);

@@ -9,6 +9,7 @@ import static java.util.Optional.of;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
 import java.io.File;
+import java.nio.file.Paths;
 import java.util.Optional;
 
 final class CachingPropertyMappers {
@@ -30,7 +31,40 @@ final class CachingPropertyMappers {
                         .to("kc.spi-connections-infinispan-quarkus-config-file")
                         .transformer(CachingPropertyMappers::resolveConfigFile)
                         .paramLabel("file")
-                        .build()
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS)
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_PROTOCOL)
+                        .paramLabel("protocol")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_PROVIDER)
+                        .paramLabel("provider")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_KEYSTORE.withRuntimeSpecificDefault(getDefaultKeystorePathValue()))
+                        .paramLabel("file")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_KEYSTORE_PASSWORD)
+                        .paramLabel("password")
+                        .isMasked(true)
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_KEYSTORE_TYPE)
+                        .paramLabel("type")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_KEYSTORE_ALIAS)
+                        .paramLabel("alias")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_TRUSTSTORE.withRuntimeSpecificDefault(getDefaultTruststorePathValue()))
+                        .paramLabel("file")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_TRUSTSTORE_PASSWORD)
+                        .paramLabel("password")
+                        .isMasked(true)
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_TRUSTSTORE_TYPE)
+                        .paramLabel("type")
+                        .build(),
+                fromOption(CachingOptions.JGROUPS_TLS_NATIVE)
+                        .build(),
         };
     }
 
@@ -51,5 +85,33 @@ final class CachingPropertyMappers {
         }
 
         return of(pathPrefix + value.get());
+    }
+
+    private static String getDefaultKeystorePathValue() {
+        String homeDir = Environment.getHomeDir();
+
+        if (homeDir != null) {
+            File file = Paths.get(homeDir, "conf", "jgroups-keystore.p12").toFile();
+
+            if (file.exists()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
+    }
+
+    private static String getDefaultTruststorePathValue() {
+        String homeDir = Environment.getHomeDir();
+
+        if (homeDir != null) {
+            File file = Paths.get(homeDir, "conf", "jgroups-truststore.p12").toFile();
+
+            if (file.exists()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
     }
 }

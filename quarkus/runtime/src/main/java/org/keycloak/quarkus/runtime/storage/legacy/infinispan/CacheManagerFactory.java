@@ -24,18 +24,34 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import io.micrometer.core.instrument.Metrics;
+import org.infinispan.commons.util.SslContextFactory;
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.infinispan.configuration.parsing.ParserRegistry;
 import org.infinispan.jboss.marshalling.core.JBossUserMarshaller;
 import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.metrics.config.MicrometerMeterRegisterConfigurationBuilder;
+import org.infinispan.remoting.transport.jgroups.JGroupsTransport;
+import org.infinispan.remoting.transport.jgroups.NamedSocketFactory;
 import org.jboss.logging.Logger;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
+
+import javax.net.ssl.SSLContext;
+
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_ENABLED_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_KEYSTORE_ALIAS_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_KEYSTORE_FILE_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_KEYSTORE_PASSWORD_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_KEYSTORE_TYPE_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_PROTOCOL_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_PROVIDER_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_TRUSTSTORE_FILE_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_TRUSTSTORE_PASSWORD_PROPERTY;
+import static org.keycloak.config.CachingOptions.JGROUPS_TLS_TRUSTSTORE_TYPE_PROPERTY;
 
 public class CacheManagerFactory {
 
     private String config;
-    private boolean metricsEnabled;
+    private final boolean metricsEnabled;
     private DefaultCacheManager cacheManager;
     private Future<DefaultCacheManager> cacheManagerFuture;
     private ExecutorService executor;
@@ -132,5 +148,36 @@ public class CacheManagerFactory {
         if (transportStack != null && !transportStack.isBlank()) {
             builder.getGlobalConfigurationBuilder().transport().defaultTransport().stack(transportStack);
         }
+
+        if (booleanProperty(JGROUPS_TLS_ENABLED_PROPERTY)) {
+            SslContextFactory sslContextFactory = new SslContextFactory();
+            sslContextFactory
+                    .sslProtocol(stringProperty(JGROUPS_TLS_PROTOCOL_PROPERTY))
+                    .provider(stringProperty(JGROUPS_TLS_PROVIDER_PROPERTY))
+                    .keyStoreFileName(stringProperty(JGROUPS_TLS_KEYSTORE_FILE_PROPERTY))
+                    .keyStorePassword(passwordProperty(JGROUPS_TLS_KEYSTORE_PASSWORD_PROPERTY))
+                    .keyStoreType(stringProperty(JGROUPS_TLS_KEYSTORE_TYPE_PROPERTY))
+                    .keyAlias(stringProperty(JGROUPS_TLS_KEYSTORE_ALIAS_PROPERTY))
+                    .trustStoreFileName(stringProperty(JGROUPS_TLS_TRUSTSTORE_FILE_PROPERTY))
+                    .trustStorePassword(passwordProperty(JGROUPS_TLS_TRUSTSTORE_PASSWORD_PROPERTY))
+                    .trustStoreType(stringProperty(JGROUPS_TLS_TRUSTSTORE_TYPE_PROPERTY))
+                    .useNativeIfAvailable(false) //requires wildfly-openssl
+                    .classLoader(Thread.currentThread().getContextClassLoader());
+            SSLContext context = sslContextFactory.getContext();
+            NamedSocketFactory namedSocketFactory = new NamedSocketFactory(context::getSocketFactory, context::getServerSocketFactory);
+            builder.getGlobalConfigurationBuilder().transport().addProperty(JGroupsTransport.SOCKET_FACTORY, namedSocketFactory);
+        }
+    }
+
+    private static char[] passwordProperty(String propertyName) {
+        return Configuration.getOptionalKcValue(propertyName).map(String::toCharArray).orElse(null);
+    }
+
+    private static boolean booleanProperty(String propertyName) {
+        return Configuration.getOptionalKcValue(propertyName).map(Boolean::parseBoolean).orElse(Boolean.FALSE);
+    }
+
+    private static String stringProperty(String propertyName) {
+        return Configuration.getOptionalKcValue(propertyName).orElse(null);
     }
 }

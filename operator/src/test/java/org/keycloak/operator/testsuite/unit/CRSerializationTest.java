@@ -22,11 +22,16 @@ import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.Test;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.ValueOrSecret;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteKeystoreSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTLSSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTruststoreSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.DatabaseSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.FeatureSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.TransactionsSpec;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -39,6 +44,7 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class CRSerializationTest {
 
@@ -126,5 +132,34 @@ public class CRSerializationTest {
         assertThat(hostnameSpec.getAdminUrl(), nullValue());
         assertThat(hostnameSpec.isStrict(), nullValue());
         assertThat(hostnameSpec.isStrictBackchannel(), nullValue());
+    }
+
+    @Test
+    public void crossSiteSpecification() {
+        Keycloak keycloak = Serialization.unmarshal(this.getClass().getResourceAsStream("/test-serialization-keycloak-cr.yml"), Keycloak.class);
+
+        CrossSiteSpec crossSiteSpec = keycloak.getSpec().getUnsupported().getCrossSite();
+        assertNotNull(crossSiteSpec);
+        assertEquals("site1", crossSiteSpec.getSite());
+
+        List<String> gossipRouters = crossSiteSpec.getGossipRouterHostnames();
+        assertEquals(Arrays.asList("a[1000]", "b[1000]"), gossipRouters);
+
+        CrossSiteTLSSpec crossSiteTLSSpec = crossSiteSpec.getTls();
+        assertNotNull(crossSiteTLSSpec);
+        assertTrue(crossSiteTLSSpec.isEnabled());
+        assertEquals("tls-secret", crossSiteTLSSpec.getSecretName());
+        assertEquals("TLSv1.2", crossSiteTLSSpec.getProtocol());
+
+        CrossSiteKeystoreSpec crossSiteKeystoreSpec = crossSiteTLSSpec.getKeystore();
+        assertNotNull(crossSiteKeystoreSpec);
+        assertEquals("my-keystore.p12", crossSiteKeystoreSpec.getFilename());
+        assertEquals("my-type", crossSiteKeystoreSpec.getType());
+        assertEquals("my-server", crossSiteKeystoreSpec.getAlias());
+
+        CrossSiteTruststoreSpec crossSiteTruststoreSpec = crossSiteTLSSpec.getTruststore();
+        assertNotNull(crossSiteTruststoreSpec);
+        assertEquals("my-truststore.p12", crossSiteTruststoreSpec.getFilename());
+        assertEquals("another-type", crossSiteTruststoreSpec.getType());
     }
 }

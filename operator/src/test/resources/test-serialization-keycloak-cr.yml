@@ -57,3 +57,19 @@ spec:
       metadata:
         labels:
           my-label: "foo"
+    crossSite:
+      site: site1
+      gossipRouterHostnames:
+        - a[1000]
+        - b[1000]
+      tls:
+        enabled: true
+        secretName: tls-secret
+        protocol: TLSv1.2
+        keystore:
+          filename: my-keystore.p12
+          type: my-type
+          alias: my-server
+        truststore:
+          filename: my-truststore.p12
+          type: another-type

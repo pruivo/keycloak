@@ -17,9 +17,15 @@
 
 package org.keycloak.operator.crds.v2alpha1;
 
+import io.fabric8.kubernetes.client.CustomResource;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
+import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTLSSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HttpSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.UnsupportedSpec;
 
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -31,4 +37,15 @@ public final class CRDUtils {
         return tlsSecret.isPresent() && !tlsSecret.get().trim().isEmpty();
     }
 
+    public static Optional<CrossSiteSpec> findCrossSiteSpec(Keycloak keycloak) {
+        return Optional.of(Objects.requireNonNull(keycloak))
+                .map(CustomResource::getSpec)
+                .map(KeycloakSpec::getUnsupported)
+                .map(UnsupportedSpec::getCrossSite);
+    }
+
+    public static Optional<CrossSiteTLSSpec> findCrossSiteTLSSpec(Keycloak keycloak) {
+        return findCrossSiteSpec(keycloak)
+                .map(CrossSiteSpec::getTls);
+    }
 }

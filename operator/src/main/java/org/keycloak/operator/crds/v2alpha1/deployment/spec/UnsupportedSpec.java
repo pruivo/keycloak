@@ -36,6 +36,9 @@ public class UnsupportedSpec {
             "Reference: https://kubernetes.io/docs/concepts/workloads/pods/#pod-templates")
     private PodTemplateSpec podTemplate;
 
+    @JsonPropertyDescription("Cross Site Spec")
+    private CrossSiteSpec crossSite;
+
     public UnsupportedSpec() {}
 
     public UnsupportedSpec(PodTemplateSpec podTemplate) {
@@ -46,8 +49,15 @@ public class UnsupportedSpec {
         return podTemplate;
     }
 
-    public void setPodTeplate(PodTemplateSpec podTemplate) {
+    public void setPodTemplate(PodTemplateSpec podTemplate) {
         this.podTemplate = podTemplate;
     }
 
+    public CrossSiteSpec getCrossSite() {
+        return crossSite;
+    }
+
+    public void setCrossSite(CrossSiteSpec crossSite) {
+        this.crossSite = crossSite;
+    }
 }

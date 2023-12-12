@@ -20,6 +20,7 @@ import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.EnvVarSource;
 import io.fabric8.kubernetes.api.model.EnvVarSourceBuilder;
+import io.fabric8.kubernetes.api.model.KeyToPath;
 import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.PodSpecFluent.ContainersNested;
 import io.fabric8.kubernetes.api.model.PodTemplateSpec;
@@ -35,13 +36,15 @@ import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
 import io.quarkus.logging.Log;
-
+import jakarta.inject.Inject;
 import org.keycloak.operator.Config;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.ValueOrSecret;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTLSSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.UnsupportedSpec;
 
 import java.nio.charset.StandardCharsets;
@@ -52,14 +55,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import jakarta.inject.Inject;
-
+import static org.keycloak.operator.crds.v2alpha1.CRDUtils.findCrossSiteSpec;
+import static org.keycloak.operator.crds.v2alpha1.CRDUtils.findCrossSiteTLSSpec;
 import static org.keycloak.operator.crds.v2alpha1.CRDUtils.isTlsConfigured;
 
 @KubernetesDependent(labelSelector = Constants.DEFAULT_LABELS_AS_STRING)
@@ -87,6 +89,9 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
         StatefulSet baseDeployment = createBaseDeployment(primary, context);
         if (isTlsConfigured(primary)) {
             configureTLS(primary, baseDeployment);
+        }
+        if (findCrossSiteTLSSpec(primary).map(CrossSiteTLSSpec::isEnabled).orElse(Boolean.FALSE)) {
+            configureCrossSiteTLS(primary, baseDeployment);
         }
         addEnvVarsAndWatchSecrets(baseDeployment, primary);
 
@@ -317,8 +322,7 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
 
         // merge with the CR; the values in CR take precedence
         if (keycloakCR.getSpec().getAdditionalOptions() != null) {
-            Set<String> inCr = keycloakCR.getSpec().getAdditionalOptions().stream().map(v -> v.getName()).collect(Collectors.toSet());
-            serverConfigsList.removeIf(v -> inCr.contains(v.getName()));
+            serverConfigsList.removeAll(keycloakCR.getSpec().getAdditionalOptions());
             serverConfigsList.addAll(keycloakCR.getSpec().getAdditionalOptions());
         }
 
@@ -360,6 +364,7 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
                         .endValueFrom()
                         .build());
 
+        addCrossSiteEnvVars(envVars, keycloakCR);
         return envVars;
     }
 
@@ -410,4 +415,78 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
         }));
     }
 
+    private void addCrossSiteEnvVars(List<EnvVar> envVars, Keycloak keycloakCR) {
+        Optional<CrossSiteSpec> crossSiteSpecOptional = findCrossSiteSpec(keycloakCR);
+        Log.info("Adding cross-site env vars: " + crossSiteSpecOptional);
+        crossSiteSpecOptional
+                .map(CrossSiteSpec::getGossipRouterHostnames)
+                .filter(routers -> !routers.isEmpty())
+                .map(routers -> String.join(",", routers))
+                .map(routers -> new EnvVarBuilder()
+                        .withName("jgroups.xsite.gossiprouters")
+                        .withValue(routers)
+                        .build())
+                .ifPresent(envVars::add);
+
+        crossSiteSpecOptional
+                .map(CrossSiteSpec::getSite)
+                .map(siteNAme -> new EnvVarBuilder()
+                        .withName("jgroups.xsite.name")
+                        .withValue(siteNAme)
+                        .build())
+                .ifPresent(envVars::add);
+
+        Optional<String> secretOptional = crossSiteSpecOptional
+                .map(CrossSiteSpec::getTls)
+                .filter(CrossSiteTLSSpec::isEnabled)
+                .map(CrossSiteTLSSpec::getSecretName);
+
+        secretOptional.map(secretName -> new EnvVarBuilder()
+                        .withName(Constants.XSITE_KEYSTORE_PASSWORD_ENV)
+                        .withNewValueFrom()
+                        .withNewSecretKeyRef()
+                        .withName(secretName)
+                        .withKey("keystorePassword")
+                        .withOptional(false)
+                        .endSecretKeyRef()
+                        .endValueFrom()
+                        .build())
+                .ifPresent(envVars::add);
+
+        secretOptional.map(secretName -> new EnvVarBuilder()
+                        .withName(Constants.XSITE_TRUSTSTORE_PASSWORD_ENV)
+                        .withNewValueFrom()
+                        .withNewSecretKeyRef()
+                        .withName(secretName)
+                        .withKey("truststorePassword")
+                        .withOptional(false)
+                        .endSecretKeyRef()
+                        .endValueFrom()
+                        .build())
+                .ifPresent(envVars::add);
+
+    }
+
+    private void configureCrossSiteTLS(Keycloak keycloakCR, StatefulSet deployment) {
+        var kcContainer = deployment.getSpec().getTemplate().getSpec().getContainers().get(0);
+        var crossSiteTLSSpec = keycloakCR.getSpec().getUnsupported().getCrossSite().getTls();
+
+        var volume = new VolumeBuilder().withName(Constants.XSITE_TLS_VOLUME_NAME)
+                .withNewSecret()
+                .withSecretName(crossSiteTLSSpec.getSecretName())
+                .withItems(
+                        new KeyToPath(crossSiteTLSSpec.getKeystore().getFilename(), null, crossSiteTLSSpec.getKeystore().getFilename()),
+                        new KeyToPath(crossSiteTLSSpec.getTruststore().getFilename(), null, crossSiteTLSSpec.getTruststore().getFilename())
+                ).endSecret()
+                .build();
+
+        var volumeMount = new VolumeMountBuilder()
+                .withName(volume.getName())
+                .withReadOnly()
+                .withMountPath(Constants.XSITE_TLS_VOLUME_MOUNT_PATH)
+                .build();
+
+        deployment.getSpec().getTemplate().getSpec().getVolumes().add(volume);
+        kcContainer.getVolumeMounts().add(volumeMount);
+    }
 }

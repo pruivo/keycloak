@@ -22,12 +22,15 @@ import io.fabric8.kubernetes.api.model.EnvVarBuilder;
 import io.fabric8.kubernetes.api.model.EnvVarSourceBuilder;
 import io.fabric8.kubernetes.api.model.SecretKeySelector;
 import io.quarkus.logging.Log;
-
+import jakarta.enterprise.context.ApplicationScoped;
 import org.keycloak.common.util.CollectionUtil;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatusAggregator;
 import org.keycloak.operator.crds.v2alpha1.deployment.ValueOrSecret;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteKeystoreSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTLSSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.CrossSiteTruststoreSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.DatabaseSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.FeatureSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpec;
@@ -42,8 +45,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
-import jakarta.enterprise.context.ApplicationScoped;
 
 import static io.smallrye.config.common.utils.StringUtil.replaceNonAlphanumericByUnderscores;
 
@@ -66,6 +67,7 @@ public class KeycloakDistConfigurator {
         configureTransactions();
         configureHttp();
         configureDatabase();
+        configureCrossSiteTls();
     }
 
     /**
@@ -121,6 +123,23 @@ public class KeycloakDistConfigurator {
                 .mapOption("db-pool-initial-size", DatabaseSpec::getPoolInitialSize)
                 .mapOption("db-pool-min-size", DatabaseSpec::getPoolMinSize)
                 .mapOption("db-pool-max-size", DatabaseSpec::getPoolMaxSize);
+    }
+
+    public void configureCrossSiteTls() {
+        optionMapper(keycloak -> keycloak.getSpec().getUnsupported().getCrossSite().getTls())
+                .mapOption("jgroups-tls-enabled", crossSiteTLSSpec -> Boolean.toString(crossSiteTLSSpec.isEnabled()))
+                .mapOption("jgroups-tls-protocol", CrossSiteTLSSpec::getProtocol);
+
+        optionMapper(keycloak -> keycloak.getSpec().getUnsupported().getCrossSite().getTls().getKeystore())
+                .mapOption("jgroups-tls-keystore-file", v -> Constants.XSITE_TLS_VOLUME_MOUNT_PATH + "/" + v.getFilename())
+                .mapOption("jgroups-tls-keystore-password", ignored -> "$(" + Constants.XSITE_KEYSTORE_PASSWORD_ENV + ")")
+                .mapOption("jgroups-tls-keystore-type", CrossSiteKeystoreSpec::getType)
+                .mapOption("jgroups-tls-keystore-alias", CrossSiteKeystoreSpec::getAlias);
+
+        optionMapper(keycloak -> keycloak.getSpec().getUnsupported().getCrossSite().getTls().getTruststore())
+                .mapOption("jgroups-tls-truststore-file", v -> Constants.XSITE_TLS_VOLUME_MOUNT_PATH + "/" + v.getFilename())
+                .mapOption("jgroups-tls-truststore-password", ignored -> "$(" + Constants.XSITE_TRUSTSTORE_PASSWORD_ENV + ")")
+                .mapOption("jgroups-tls-truststore-type", CrossSiteTruststoreSpec::getType);
     }
 
     /* ---------- END of configuration of first-class citizen fields ---------- */

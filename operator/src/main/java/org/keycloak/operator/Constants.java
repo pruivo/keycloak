@@ -70,4 +70,10 @@ public final class Constants {
     public static final String CERTIFICATES_FOLDER = "/mnt/certificates";
 
     public static String KEYCLOAK_HTTP_RELATIVE_PATH_KEY = "http-relative-path";
+
+
+    public static final String XSITE_TLS_VOLUME_NAME = "xsite-tls-volume";
+    public static final String XSITE_TLS_VOLUME_MOUNT_PATH = "/mnt/secrets/jgroups";
+    public static final String XSITE_KEYSTORE_PASSWORD_ENV = "JGRP_KEYSTORE_PASSWORD";
+    public static final String XSITE_TRUSTSTORE_PASSWORD_ENV = "JGRP_TRUSTSTORE_PASSWORD";
 }
