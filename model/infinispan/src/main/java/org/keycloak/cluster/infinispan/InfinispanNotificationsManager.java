@@ -33,9 +33,8 @@ import org.infinispan.client.hotrod.annotation.ClientCacheEntryCreated;
 import org.infinispan.client.hotrod.annotation.ClientCacheEntryModified;
 import org.infinispan.client.hotrod.annotation.ClientCacheEntryRemoved;
 import org.infinispan.client.hotrod.annotation.ClientListener;
-import org.infinispan.client.hotrod.event.ClientCacheEntryCreatedEvent;
-import org.infinispan.client.hotrod.event.ClientCacheEntryModifiedEvent;
-import org.infinispan.client.hotrod.event.ClientCacheEntryRemovedEvent;
+import org.infinispan.client.hotrod.event.ClientCacheEntryCustomEvent;
+import org.infinispan.commons.util.KeyValueWithPrevious;
 import org.infinispan.context.Flag;
 import org.infinispan.notifications.Listener;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryCreated;
@@ -113,7 +112,7 @@ public class InfinispanNotificationsManager {
 
         // Added listener for remoteCache to notify other DCs
         if (workRemoteCache != null) {
-            workRemoteCache.addClientListener(manager.new HotRodListener(workRemoteCache));
+            workRemoteCache.addClientListener(manager.new HotRodListener());
             logger.debugf("Added listener for HotRod remoteStore cache: %s", workRemoteCache.getName());
         }
 
@@ -194,54 +193,31 @@ public class InfinispanNotificationsManager {
 
         @CacheEntryRemoved
         public void cacheEntryRemoved(CacheEntryRemovedEvent<String, Serializable> event) {
-            taskFinished(event.getKey(), true);
+            taskFinished(event.getKey());
         }
 
     }
 
 
-    @ClientListener
+    @ClientListener(converterFactoryName = "key-value-with-previous-converter-factory", useRawData = true)
     public class HotRodListener {
 
-        private final RemoteCache<Object, Object> remoteCache;
-
-        public HotRodListener(RemoteCache<Object, Object> remoteCache) {
-            this.remoteCache = remoteCache;
-        }
-
-
         @ClientCacheEntryCreated
-        public void created(ClientCacheEntryCreatedEvent event) {
-            String key = event.getKey().toString();
-            hotrodEventReceived(key);
-        }
-
-
         @ClientCacheEntryModified
-        public void updated(ClientCacheEntryModifiedEvent event) {
-            String key = event.getKey().toString();
-            hotrodEventReceived(key);
+        public void created(ClientCacheEntryCustomEvent<KeyValueWithPrevious<String, Serializable>> event) {
+            KeyValueWithPrevious<String, Serializable> data = event.getEventData();
+            hotrodEventReceived(data.getKey(), data.getValue());
         }
-
 
         @ClientCacheEntryRemoved
-        public void removed(ClientCacheEntryRemovedEvent event) {
-            String key = event.getKey().toString();
-            taskFinished(key, true);
+        public void removed(ClientCacheEntryCustomEvent<KeyValueWithPrevious<String, Serializable>> event) {
+            String key = event.getEventData().getKey();
+            taskFinished(key);
         }
 
-
-        private void hotrodEventReceived(String key) {
-            // TODO: Look at CacheEventConverter stuff to possibly include value in the event and avoid additional remoteCache request
+        private void hotrodEventReceived(String key, Serializable value) {
             try {
-                listenersExecutor.submit(() -> {
-                    Object value = DefaultInfinispanConnectionProviderFactory.runWithReadLockOnCacheManager(() ->
-                            // We've seen deadlocks in Infinispan 14.x when shutting down Infinispan concurrently, therefore wrapping this
-                            remoteCache.get(key)
-                    );
-                    eventReceived(key, (Serializable) value);
-
-                });
+                listenersExecutor.submit(() -> eventReceived(key, value));
             } catch (RejectedExecutionException ree) {
                 // server is shutting down or pool was terminated - don't throw errors
                 if (ree.getMessage() != null && (ree.getMessage().contains("Terminated") || ree.getMessage().contains("Shutting down"))) {
@@ -298,14 +274,14 @@ public class InfinispanNotificationsManager {
     }
 
 
-    void taskFinished(String taskKey, boolean success) {
+    void taskFinished(String taskKey) {
         TaskCallback callback = taskCallbacks.remove(taskKey);
 
         if (callback != null) {
             if (logger.isDebugEnabled()) {
-                logger.debugf("Finished task '%s' with '%b'", taskKey, success);
+                logger.debugf("Finished task '%s' with '%b'", taskKey, true);
             }
-            callback.setSuccess(success);
+            callback.setSuccess(true);
             callback.getTaskCompletedLatch().countDown();
         }
 
