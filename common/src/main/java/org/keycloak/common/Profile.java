@@ -105,6 +105,7 @@ public class Profile {
         TRANSIENT_USERS("Transient users for brokering", Type.EXPERIMENTAL),
 
         MULTI_SITE("Multi-site support", Type.DISABLED_BY_DEFAULT),
+        REMOTE_CACHE("Remote caches support", Type.EXPERIMENTAL),
 
         CLIENT_TYPES("Client Types", Type.EXPERIMENTAL),
 

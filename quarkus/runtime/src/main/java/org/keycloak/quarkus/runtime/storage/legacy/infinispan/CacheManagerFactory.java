@@ -17,15 +17,12 @@
 
 package org.keycloak.quarkus.runtime.storage.legacy.infinispan;
 
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-
 import io.micrometer.core.instrument.Metrics;
+import org.infinispan.client.hotrod.RemoteCacheManager;
+import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
 import org.infinispan.client.hotrod.impl.ConfigurationProperties;
+import org.infinispan.commons.api.Lifecycle;
+import org.infinispan.commons.util.concurrent.CompletableFutures;
 import org.infinispan.configuration.cache.PersistenceConfigurationBuilder;
 import org.infinispan.configuration.global.GlobalConfiguration;
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
@@ -41,9 +38,17 @@ import org.jgroups.protocols.TCP_NIO2;
 import org.jgroups.protocols.UDP;
 import org.jgroups.util.TLS;
 import org.jgroups.util.TLSClientAuth;
+import org.keycloak.common.Profile;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
 import javax.net.ssl.SSLContext;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_FILE_PROPERTY;
@@ -55,52 +60,114 @@ import static org.keycloak.config.CachingOptions.CACHE_REMOTE_HOST_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_PASSWORD_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_PORT_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_USERNAME_PROPERTY;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHENTICATION_SESSIONS_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.DISTRIBUTED_REPLICATED_CACHE_NAMES;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
 import static org.wildfly.security.sasl.util.SaslMechanismInformation.Names.SCRAM_SHA_512;
 
 public class CacheManagerFactory {
 
     private static final Logger logger = Logger.getLogger(CacheManagerFactory.class);
 
-    private String config;
+    private final String config;
     private final boolean metricsEnabled;
-    private DefaultCacheManager cacheManager;
-    private Future<DefaultCacheManager> cacheManagerFuture;
-    private ExecutorService executor;
-    private boolean initialized;
+    private final CompletableFuture<DefaultCacheManager> cacheManagerFuture;
+    private final CompletableFuture<RemoteCacheManager> remoteCacheManagerFuture;
 
     public CacheManagerFactory(String config, boolean metricsEnabled) {
         this.config = config;
         this.metricsEnabled = metricsEnabled;
-        this.executor = createThreadPool();
-        this.cacheManagerFuture = executor.submit(this::startCacheManager);
-    }
-
-    public DefaultCacheManager getOrCreate() {
-        if (cacheManager == null) {
-            if (initialized) {
-                return null;
-            }
-
-            try {
-                // for now, we don't have any explicit property for setting the cache start timeout
-                return cacheManager = cacheManagerFuture.get(getStartTimeout(), TimeUnit.SECONDS);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to start caches", e);
-            } finally {
-                shutdownThreadPool();
-            }
+        this.cacheManagerFuture = CompletableFuture.supplyAsync(this::startEmbeddedCacheManager);
+        if (isCrossSiteEnabled() && isRemoteCacheEnabled()) {
+            logger.debug("Remote Cache feature is enabled");
+            this.remoteCacheManagerFuture = CompletableFuture.supplyAsync(this::startRemoteCacheManager);
+        } else {
+            logger.debug("Remote Cache feature is disabled");
+            this.remoteCacheManagerFuture = CompletableFutures.completedNull();
         }
-
-        return cacheManager;
     }
 
-    private ExecutorService createThreadPool() {
-        return Executors.newSingleThreadExecutor(r -> new Thread(r, "keycloak-cache-init"));
+    public DefaultCacheManager getOrCreateEmbeddedCacheManager() {
+        return join(cacheManagerFuture);
     }
 
-    private DefaultCacheManager startCacheManager() {
+    public RemoteCacheManager getOrCreateRemoteCacheManager() {
+        return join(remoteCacheManagerFuture);
+    }
+
+    public void shutdown() {
+        logger.debug("Shutdown embedded and remote cache managers");
+        cacheManagerFuture.thenAccept(CacheManagerFactory::close);
+        remoteCacheManagerFuture.thenAccept(CacheManagerFactory::close);
+    }
+
+    private static boolean isCrossSiteEnabled() {
+        return Profile.isFeatureEnabled(Profile.Feature.MULTI_SITE);
+    }
+
+    private static boolean isRemoteCacheEnabled() {
+        return Profile.isFeatureEnabled(Profile.Feature.REMOTE_CACHE);
+    }
+
+    private static <T> T join(Future<T> future) {
+        try {
+            return future.get(getStartTimeout(), TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (ExecutionException | TimeoutException e) {
+            throw new RuntimeException("Failed to start embedded or remote cache manager", e);
+        }
+    }
+
+    private static void close(Lifecycle lifecycle) {
+        if (lifecycle != null) {
+            lifecycle.stop();
+        }
+    }
+
+    private RemoteCacheManager startRemoteCacheManager() {
+        String cacheRemoteHost = requiredStringProperty(CACHE_REMOTE_HOST_PROPERTY);
+        Integer cacheRemotePort = Configuration.getOptionalKcValue(CACHE_REMOTE_PORT_PROPERTY)
+                .map(Integer::parseInt)
+                .orElse(ConfigurationProperties.DEFAULT_HOTROD_PORT);
+        String cacheRemoteUsername = requiredStringProperty(CACHE_REMOTE_USERNAME_PROPERTY);
+        String cacheRemotePassword = requiredStringProperty(CACHE_REMOTE_PASSWORD_PROPERTY);
+
+        SSLContext sslContext;
+        try {
+            // uses the default Java Runtime TrustStore, or the one generated by Keycloak (see org.keycloak.truststore.TruststoreBuilder)
+            sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, null, null);
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            throw new RuntimeException(e);
+        }
+        ConfigurationBuilder builder = new ConfigurationBuilder();
+        builder.addServer().host(cacheRemoteHost).port(cacheRemotePort);
+        builder.connectionPool().maxActive(16).exhaustedAction(org.infinispan.client.hotrod.configuration.ExhaustedAction.CREATE_NEW);
+        builder.security().ssl()
+                .enable()
+                .sslContext(sslContext)
+                .sniHostName(cacheRemoteHost);
+        builder.security().authentication()
+                .enable()
+                .username(cacheRemoteUsername)
+                .password(cacheRemotePassword)
+                .realm("default")
+                .saslMechanism(SCRAM_SHA_512);
+
+        // TODO replace with protostream
+        builder.marshaller(new JBossUserMarshaller());
+
+        RemoteCacheManager remoteCacheManager = new RemoteCacheManager(builder.build());
+
+        // establish connection to all caches
+        DISTRIBUTED_REPLICATED_CACHE_NAMES.forEach(remoteCacheManager::getCache);
+        return remoteCacheManager;
+    }
+
+    private DefaultCacheManager startEmbeddedCacheManager() {
         ConfigurationBuilderHolder builder = new ParserRegistry().parse(config);
 
         if (builder.getNamedConfigurationBuilders().get(USER_SESSION_CACHE_NAME).clustering().cacheMode().isClustered()) {
@@ -124,37 +191,26 @@ public class CacheManagerFactory {
         // See https://infinispan.org/docs/stable/titles/developing/developing.html#marshalling for the details
         builder.getGlobalConfigurationBuilder().serialization().marshaller(new JBossUserMarshaller());
 
+        if (isCrossSiteEnabled() && isRemoteCacheEnabled()) {
+            var builders = builder.getNamedConfigurationBuilders();
+            // remove all distributed caches
+            logger.debug("Removing all distributed caches.");
+            // TODO [pruivo] remove all distributed caches after all of them are converted
+            //DISTRIBUTED_REPLICATED_CACHE_NAMES.forEach(builders::remove);
+            builders.remove(WORK_CACHE_NAME);
+            builders.remove(AUTHENTICATION_SESSIONS_CACHE_NAME);
+        }
+
         return new DefaultCacheManager(builder, isStartEagerly());
     }
 
-    private boolean isStartEagerly() {
+    private static boolean isStartEagerly() {
         // eagerly starts caches by default
         return Boolean.parseBoolean(System.getProperty("kc.cache-ispn-start-eagerly", Boolean.TRUE.toString()));
     }
 
-    private Integer getStartTimeout() {
+    private static int getStartTimeout() {
         return Integer.getInteger("kc.cache-ispn-start-timeout", 120);
-    }
-
-    private void shutdownThreadPool() {
-        if (executor != null) {
-            executor.shutdown();
-            try {
-                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                    if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                        Logger.getLogger(CacheManagerFactory.class).warn("Cache init thread pool not terminated");
-                    }
-                }
-            } catch (Exception cause) {
-                executor.shutdownNow();
-            } finally {
-                executor = null;
-                cacheManagerFuture = null;
-                config = null;
-                initialized = true;
-            }
-        }
     }
 
     private void configureTransportStack(ConfigurationBuilderHolder builder) {
@@ -180,6 +236,12 @@ public class CacheManagerFactory {
             transportConfig.addProperty(JGroupsTransport.SOCKET_FACTORY, tls.createSocketFactory());
             Logger.getLogger(CacheManagerFactory.class).info("MTLS enabled for communications for embedded caches");
         }
+
+        //TODO [pruivo] disable JGroups after all distributed caches are converted
+//        if (isCrossSiteEnabled() && isRemoteCacheEnabled()) {
+//            logger.debug("Disabling JGroups between Keycloak nodes");
+//            builder.getGlobalConfigurationBuilder().nonClusteredDefault();
+//        }
     }
 
     private void validateTlsAvailable(GlobalConfiguration config) {
