@@ -192,9 +192,8 @@ public class InfinispanClusterProviderFactory implements ClusterProviderFactory 
         return PROVIDER_ID;
     }
 
-    @SuppressWarnings("deprecation")
     @Override
-    public boolean isSupported() {
+    public boolean isSupported(Config.Scope config) {
         return !Profile.isFeatureEnabled(Profile.Feature.MULTI_SITE) || !Profile.isFeatureEnabled(Profile.Feature.REMOTE_CACHE);
     }
 

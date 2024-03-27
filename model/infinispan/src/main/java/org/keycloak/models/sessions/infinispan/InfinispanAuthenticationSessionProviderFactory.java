@@ -113,7 +113,6 @@ public class InfinispanAuthenticationSessionProviderFactory implements Authentic
 
     protected void registerClusterListeners(KeycloakSession session) {
         KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
-        //noinspection deprecation
         ClusterProvider cluster = session.getProvider(ClusterProvider.class);
 
         cluster.registerListener(REALM_REMOVED_AUTHSESSION_EVENT, new AbstractAuthSessionClusterListener<RealmRemovedSessionEvent>(sessionFactory) {
@@ -177,7 +176,6 @@ public class InfinispanAuthenticationSessionProviderFactory implements Authentic
 
                     keyGenerator = new InfinispanKeyGenerator();
 
-                    //noinspection deprecation
                     ClusterProvider cluster = session.getProvider(ClusterProvider.class);
                     cluster.registerListener(AUTHENTICATION_SESSION_EVENTS, this::updateAuthNotes);
 
@@ -201,9 +199,8 @@ public class InfinispanAuthenticationSessionProviderFactory implements Authentic
         return PROVIDER_PRIORITY;
     }
 
-    @SuppressWarnings("deprecation")
     @Override
-    public boolean isSupported() {
+    public boolean isSupported(Config.Scope config) {
         return !Profile.isFeatureEnabled(Profile.Feature.MULTI_SITE) || !Profile.isFeatureEnabled(Profile.Feature.REMOTE_CACHE);
     }
 }
