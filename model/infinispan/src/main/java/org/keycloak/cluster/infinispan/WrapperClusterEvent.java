@@ -17,20 +17,18 @@
 
 package org.keycloak.cluster.infinispan;
 
+import org.infinispan.protostream.WrappedMessage;
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.cluster.ClusterEvent;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import java.util.Objects;
+import org.keycloak.marshalling.Marshalling;
 
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
+import java.util.Objects;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@SerializeWith(WrapperClusterEvent.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.WRAPPED_CLUSTER_EVENT)
 public class WrapperClusterEvent implements ClusterEvent {
 
     private String eventKey;
@@ -40,6 +38,7 @@ public class WrapperClusterEvent implements ClusterEvent {
     private boolean ignoreSenderSite;
     private ClusterEvent delegateEvent;
 
+    @ProtoField(1)
     public String getEventKey() {
         return eventKey;
     }
@@ -48,6 +47,7 @@ public class WrapperClusterEvent implements ClusterEvent {
         this.eventKey = eventKey;
     }
 
+    @ProtoField(2)
     public String getSender() {
         return sender;
     }
@@ -56,6 +56,7 @@ public class WrapperClusterEvent implements ClusterEvent {
         this.sender = sender;
     }
 
+    @ProtoField(3)
     public String getSenderSite() {
         return senderSite;
     }
@@ -64,6 +65,7 @@ public class WrapperClusterEvent implements ClusterEvent {
         this.senderSite = senderSite;
     }
 
+    @ProtoField(4)
     public boolean isIgnoreSender() {
         return ignoreSender;
     }
@@ -72,6 +74,7 @@ public class WrapperClusterEvent implements ClusterEvent {
         this.ignoreSender = ignoreSender;
     }
 
+    @ProtoField(5)
     public boolean isIgnoreSenderSite() {
         return ignoreSenderSite;
     }
@@ -88,10 +91,23 @@ public class WrapperClusterEvent implements ClusterEvent {
         this.delegateEvent = delegateEvent;
     }
 
+    @ProtoField(6)
+    WrappedMessage getEventPS() {
+        return new WrappedMessage(getDelegateEvent());
+    }
+
+    void setEventPS(WrappedMessage eventPS) {
+        setDelegateEvent((ClusterEvent) eventPS.getValue());
+    }
+
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         WrapperClusterEvent that = (WrapperClusterEvent) o;
         return ignoreSender == that.ignoreSender && ignoreSenderSite == that.ignoreSenderSite && Objects.equals(eventKey, that.eventKey) && Objects.equals(sender, that.sender) && Objects.equals(senderSite, that.senderSite) && Objects.equals(delegateEvent, that.delegateEvent);
     }
@@ -104,47 +120,5 @@ public class WrapperClusterEvent implements ClusterEvent {
     @Override
     public String toString() {
         return String.format("WrapperClusterEvent [ eventKey=%s, sender=%s, senderSite=%s, delegateEvent=%s ]", eventKey, sender, senderSite, delegateEvent.toString());
-    }
-
-    public static class ExternalizerImpl implements Externalizer<WrapperClusterEvent> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, WrapperClusterEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.eventKey, output);
-            MarshallUtil.marshallString(obj.sender, output);
-            MarshallUtil.marshallString(obj.senderSite, output);
-            output.writeBoolean(obj.ignoreSender);
-            output.writeBoolean(obj.ignoreSenderSite);
-
-            output.writeObject(obj.delegateEvent);
-        }
-
-        @Override
-        public WrapperClusterEvent readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public WrapperClusterEvent readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            WrapperClusterEvent res = new WrapperClusterEvent();
-
-            res.eventKey = MarshallUtil.unmarshallString(input);
-            res.sender = MarshallUtil.unmarshallString(input);
-            res.senderSite = MarshallUtil.unmarshallString(input);
-            res.ignoreSender = input.readBoolean();
-            res.ignoreSenderSite = input.readBoolean();
-
-            res.delegateEvent = (ClusterEvent) input.readObject();
-
-            return res;
-        }
     }
 }

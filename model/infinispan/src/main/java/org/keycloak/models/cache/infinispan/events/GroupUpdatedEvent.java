@@ -17,20 +17,17 @@
 
 package org.keycloak.models.cache.infinispan.events;
 
-import java.util.Set;
-
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.models.cache.infinispan.RealmCacheManager;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.marshalling.Marshalling;
+
+import java.util.Set;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@SerializeWith(GroupUpdatedEvent.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.GROUP_UPDATED_EVENT)
 public class GroupUpdatedEvent extends InvalidationEvent implements RealmCacheInvalidationEvent {
 
     private String groupId;
@@ -46,6 +43,9 @@ public class GroupUpdatedEvent extends InvalidationEvent implements RealmCacheIn
         return groupId;
     }
 
+    void setId(String id) {
+        this.groupId = id;
+    }
 
     @Override
     public String toString() {
@@ -57,32 +57,4 @@ public class GroupUpdatedEvent extends InvalidationEvent implements RealmCacheIn
         realmCache.groupNameInvalidations(groupId, invalidations);
     }
 
-    public static class ExternalizerImpl implements Externalizer<GroupUpdatedEvent> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, GroupUpdatedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.groupId, output);
-        }
-
-        @Override
-        public GroupUpdatedEvent readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public GroupUpdatedEvent readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            GroupUpdatedEvent res = new GroupUpdatedEvent();
-            res.groupId = MarshallUtil.unmarshallString(input);
-
-            return res;
-        }
-    }
 }

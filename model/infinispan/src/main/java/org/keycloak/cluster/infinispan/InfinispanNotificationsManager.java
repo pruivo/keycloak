@@ -75,7 +75,7 @@ public class InfinispanNotificationsManager {
 
     private final ConcurrentMap<String, TaskCallback> taskCallbacks = new ConcurrentHashMap<>();
 
-    private final Cache<String, Serializable> workCache;
+    private final Cache<String, Object> workCache;
 
     private final RemoteCache<Object, Serializable> workRemoteCache;
 
@@ -85,7 +85,7 @@ public class InfinispanNotificationsManager {
 
     private final ExecutorService listenersExecutor;
 
-    protected InfinispanNotificationsManager(Cache<String, Serializable> workCache, RemoteCache<Object, Serializable> workRemoteCache, String myAddress, String mySite, ExecutorService listenersExecutor) {
+    protected InfinispanNotificationsManager(Cache<String, Object> workCache, RemoteCache<Object, Serializable> workRemoteCache, String myAddress, String mySite, ExecutorService listenersExecutor) {
         this.workCache = workCache;
         this.workRemoteCache = workRemoteCache;
         this.myAddress = myAddress;
@@ -95,7 +95,7 @@ public class InfinispanNotificationsManager {
 
 
     // Create and init manager including all listeners etc
-    public static InfinispanNotificationsManager create(KeycloakSession session, Cache<String, Serializable> workCache, String myAddress, String mySite, Set<RemoteStore> remoteStores) {
+    public static InfinispanNotificationsManager create(KeycloakSession session, Cache<String, Object> workCache, String myAddress, String mySite, Set<RemoteStore> remoteStores) {
         RemoteCache<Object, Serializable> workRemoteCache = null;
 
         if (!remoteStores.isEmpty()) {
@@ -186,17 +186,17 @@ public class InfinispanNotificationsManager {
     public class CacheEntryListener {
 
         @CacheEntryCreated
-        public void cacheEntryCreated(CacheEntryCreatedEvent<String, Serializable> event) {
+        public void cacheEntryCreated(CacheEntryCreatedEvent<String, Object> event) {
             eventReceived(event.getKey(), event.getValue());
         }
 
         @CacheEntryModified
-        public void cacheEntryModified(CacheEntryModifiedEvent<String, Serializable> event) {
+        public void cacheEntryModified(CacheEntryModifiedEvent<String, Object> event) {
             eventReceived(event.getKey(), event.getNewValue());
         }
 
         @CacheEntryRemoved
-        public void cacheEntryRemoved(CacheEntryRemovedEvent<String, Serializable> event) {
+        public void cacheEntryRemoved(CacheEntryRemovedEvent<String, Object> event) {
             taskFinished(event.getKey());
         }
 
@@ -267,7 +267,7 @@ public class InfinispanNotificationsManager {
         }
     }
 
-    private void eventReceived(String key, Serializable obj) {
+    private void eventReceived(String key, Object obj) {
         if (!(obj instanceof WrapperClusterEvent event)) {
             // Items with the TASK_KEY_PREFIX might be gone fast once the locking is complete, therefore, don't log them.
             // It is still good to have the warning in case of real events return null because they have been, for example, expired

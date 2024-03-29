@@ -67,14 +67,10 @@ import org.keycloak.models.cache.infinispan.authorization.entities.ResourceScope
 import org.keycloak.models.cache.infinispan.authorization.entities.ScopeListQuery;
 import org.keycloak.models.cache.infinispan.authorization.events.PermissionTicketRemovedEvent;
 import org.keycloak.models.cache.infinispan.authorization.events.PermissionTicketUpdatedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.PolicyRemovedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.PolicyUpdatedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ResourceRemovedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ResourceServerRemovedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ResourceServerUpdatedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ResourceUpdatedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ScopeRemovedEvent;
-import org.keycloak.models.cache.infinispan.authorization.events.ScopeUpdatedEvent;
+import org.keycloak.models.cache.infinispan.authorization.events.PolicyEvent;
+import org.keycloak.models.cache.infinispan.authorization.events.ResourceEvent;
+import org.keycloak.models.cache.infinispan.authorization.events.ResourceServerEvent;
+import org.keycloak.models.cache.infinispan.authorization.events.ScopeEvent;
 import org.keycloak.models.cache.infinispan.entities.NonExistentItem;
 import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
 import org.keycloak.representations.idm.authorization.AbstractPolicyRepresentation;
@@ -254,7 +250,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
         ResourceServerAdapter adapter = managedResourceServers.get(id);
         if (adapter != null) adapter.invalidateFlag();
 
-        invalidationEvents.add(ResourceServerUpdatedEvent.create(id));
+        invalidationEvents.add(ResourceServerEvent.updated(id));
     }
 
     public void registerScopeInvalidation(String id, String name, String serverId) {
@@ -262,7 +258,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
         ScopeAdapter adapter = managedScopes.get(id);
         if (adapter != null) adapter.invalidateFlag();
 
-        invalidationEvents.add(ScopeUpdatedEvent.create(id, name, serverId));
+        invalidationEvents.add(ScopeEvent.updated(id, name, serverId));
     }
 
     public void registerResourceInvalidation(String id, String name, String type, Set<String> uris, Set<String> scopes, String serverId, String owner) {
@@ -270,7 +266,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
         ResourceAdapter adapter = managedResources.get(id);
         if (adapter != null) adapter.invalidateFlag();
 
-        invalidationEvents.add(ResourceUpdatedEvent.create(id, name, type, uris, scopes, serverId, owner));
+        invalidationEvents.add(ResourceEvent.updated(id, name, type, uris, owner, scopes, serverId));
     }
 
     public void registerPolicyInvalidation(String id, String name, Set<String> resources, Set<String> scopes, String defaultResourceType, String serverId) {
@@ -282,7 +278,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
         PolicyAdapter adapter = managedPolicies.get(id);
         if (adapter != null) adapter.invalidateFlag();
 
-        invalidationEvents.add(PolicyUpdatedEvent.create(id, name, resources, resourceTypes, scopes, serverId));
+        invalidationEvents.add(PolicyEvent.updated(id, name, resources, resourceTypes, scopes, serverId));
     }
 
     public void registerPermissionTicketInvalidation(String id, String owner, String requester, String resource, String resourceName, String scope, String serverId) {
@@ -443,7 +439,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
             if (server == null) return;
 
             cache.invalidateObject(id);
-            invalidationEvents.add(ResourceServerRemovedEvent.create(id, server.getId()));
+            invalidationEvents.add(ResourceServerEvent.removed(id));
             cache.resourceServerRemoval(id, invalidations);
             getResourceServerStoreDelegate().delete(client);
 
@@ -504,7 +500,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
             if (scope == null) return;
 
             cache.invalidateObject(id);
-            invalidationEvents.add(ScopeRemovedEvent.create(id, scope.getName(), scope.getResourceServer().getId()));
+            invalidationEvents.add(ScopeEvent.removed(id, scope.getName(), scope.getResourceServer().getId()));
             cache.scopeRemoval(id, scope.getName(), scope.getResourceServer().getId(), invalidations);
             getScopeStoreDelegate().delete(id);
         }
@@ -596,7 +592,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
             if (resource == null) return;
 
             cache.invalidateObject(id);
-            invalidationEvents.add(ResourceRemovedEvent.create(id, resource.getName(), resource.getType(), resource.getUris(), resource.getOwner(), resource.getScopes().stream().map(Scope::getId).collect(Collectors.toSet()), resource.getResourceServer().getId()));
+            invalidationEvents.add(ResourceEvent.removed(id, resource.getName(), resource.getType(), resource.getUris(), resource.getOwner(), resource.getScopes().stream().map(Scope::getId).collect(Collectors.toSet()), resource.getResourceServer().getId()));
             cache.resourceRemoval(id, resource.getName(), resource.getType(), resource.getUris(), resource.getOwner(), resource.getScopes().stream().map(Scope::getId).collect(Collectors.toSet()), resource.getResourceServer().getId(), invalidations);
             getResourceStoreDelegate().delete(id);
 
@@ -866,7 +862,7 @@ public class StoreFactoryCacheSession implements CachedStoreFactoryProvider {
                 resourceTypes.add(defaultResourceType);
             }
             Set<String> scopes = policy.getScopes().stream().map(Scope::getId).collect(Collectors.toSet());
-            invalidationEvents.add(PolicyRemovedEvent.create(id, policy.getName(), resources, resourceTypes, scopes, resourceServer.getId()));
+            invalidationEvents.add(PolicyEvent.removed(id, policy.getName(), resources, resourceTypes, scopes, resourceServer.getId()));
             cache.policyRemoval(id, policy.getName(), resources, resourceTypes, scopes, resourceServer.getId(), invalidations);
             getPolicyStoreDelegate().delete(id);
 

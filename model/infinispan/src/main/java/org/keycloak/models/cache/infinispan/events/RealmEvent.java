@@ -17,71 +17,61 @@
 
 package org.keycloak.models.cache.infinispan.events;
 
-import org.infinispan.protostream.annotations.ProtoField;
-import org.infinispan.protostream.annotations.ProtoTypeId;
-import org.keycloak.models.cache.infinispan.RealmCacheManager;
-import org.keycloak.marshalling.Marshalling;
-
 import java.util.Objects;
 import java.util.Set;
 
+import org.infinispan.protostream.annotations.ProtoFactory;
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
+import org.keycloak.marshalling.Marshalling;
+import org.keycloak.models.cache.infinispan.RealmCacheManager;
+
 /**
- *
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@ProtoTypeId(Marshalling.GROUP_ADDED_EVENT)
-public class GroupAddedEvent extends InvalidationEvent implements RealmCacheInvalidationEvent {
+@ProtoTypeId(Marshalling.REALM_EVENT)
+public class RealmEvent extends TypedInvalidationEvent implements RealmCacheInvalidationEvent {
 
-    private String groupId;
-    private String realmId;
-    private String parentId;
+    private final String realmId;
+    private final String realmName;
 
-    public static GroupAddedEvent create(String groupId, String parentId, String realmId) {
-        GroupAddedEvent event = new GroupAddedEvent();
-        event.realmId = realmId;
-        event.parentId = parentId;
-        event.groupId = groupId;
-        return event;
+    @ProtoFactory
+    RealmEvent(String id, Type eventType, String realmName) {
+        super(eventType);
+        this.realmId = id;
+        this.realmName = realmName;
+    }
+
+    public static RealmEvent removed(String realmId, String realmName) {
+        return new RealmEvent(Objects.requireNonNull(realmId), Type.REMOVED, Objects.requireNonNull(realmName));
+    }
+
+    public static RealmEvent updated(String realmId, String realmName) {
+        return new RealmEvent(Objects.requireNonNull(realmId), Type.UPDATED, Objects.requireNonNull(realmName));
     }
 
     @Override
     public String getId() {
-        return groupId;
-    }
-
-    void setId(String id) {
-        this.groupId = id;
-    }
-
-    @ProtoField(2)
-    String getRealmId() {
         return realmId;
     }
 
-    void setRealmId(String realmId) {
-        this.realmId = realmId;
-    }
-
     @ProtoField(3)
-    String getParentId() {
-        return parentId;
-    }
-
-    void setParentId(String parentId) {
-        this.parentId = parentId;
+    String getRealmName() {
+        return realmName;
     }
 
     @Override
     public String toString() {
-        return String.format("GroupAddedEvent [ realmId=%s, groupId=%s ]", realmId, groupId);
+        return String.format("RealmRemovedEvent [ realmId=%s, realmName=%s, type=%s ]", realmId, realmName, eventType());
     }
 
     @Override
     public void addInvalidations(RealmCacheManager realmCache, Set<String> invalidations) {
-        realmCache.groupQueriesInvalidations(realmId, invalidations);
-        if (parentId != null) {
-            invalidations.add(parentId);
+        switch (eventType()) {
+            case REMOVED -> realmCache.realmRemoval(realmId, realmName, invalidations);
+            case UPDATED -> realmCache.realmUpdated(realmId, realmName, invalidations);
         }
+
     }
 
     @Override
@@ -95,13 +85,13 @@ public class GroupAddedEvent extends InvalidationEvent implements RealmCacheInva
         if (!super.equals(o)) {
             return false;
         }
-        GroupAddedEvent that = (GroupAddedEvent) o;
-        return Objects.equals(groupId, that.groupId) && Objects.equals(realmId, that.realmId) && Objects.equals(parentId, that.parentId);
+        RealmEvent that = (RealmEvent) o;
+        return Objects.equals(realmName, that.realmName);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), groupId, realmId, parentId);
+        return Objects.hash(super.hashCode(), realmName);
     }
 
 }

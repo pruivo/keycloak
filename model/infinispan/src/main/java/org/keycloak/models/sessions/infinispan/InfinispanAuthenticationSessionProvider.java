@@ -149,7 +149,7 @@ public class InfinispanAuthenticationSessionProvider implements AuthenticationSe
         ClusterProvider cluster = session.getProvider(ClusterProvider.class);
         cluster.notify(
           InfinispanAuthenticationSessionProviderFactory.AUTHENTICATION_SESSION_EVENTS,
-          AuthenticationSessionAuthNoteUpdateEvent.create(compoundId.getRootSessionId(), compoundId.getTabId(), compoundId.getClientUUID(), authNotesFragment),
+          AuthenticationSessionAuthNoteUpdateEvent.create(compoundId.getRootSessionId(), compoundId.getTabId(), authNotesFragment),
           true,
           ClusterProvider.DCNotify.ALL_BUT_LOCAL_DC
         );

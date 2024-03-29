@@ -17,6 +17,7 @@
 
 package org.keycloak.models.cache.infinispan.events;
 
+import org.infinispan.protostream.annotations.ProtoField;
 import org.keycloak.cluster.ClusterEvent;
 
 /**
@@ -24,6 +25,7 @@ import org.keycloak.cluster.ClusterEvent;
  */
 public abstract class InvalidationEvent implements ClusterEvent {
 
+    @ProtoField(1)
     public abstract String getId();
 
     @Override
@@ -37,7 +39,6 @@ public abstract class InvalidationEvent implements ClusterEvent {
         if (!obj.getClass().equals(this.getClass())) return false;
 
         InvalidationEvent that = (InvalidationEvent) obj;
-        if (!that.getId().equals(getId())) return false;
-        return true;
+        return that.getId().equals(getId());
     }
 }

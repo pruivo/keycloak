@@ -17,22 +17,19 @@
 
 package org.keycloak.models.cache.infinispan.events;
 
-import java.util.Objects;
-import java.util.Set;
-
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.cache.infinispan.UserCacheManager;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.marshalling.Marshalling;
+
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@SerializeWith(UserFederationLinkRemovedEvent.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.USER_FEDERATION_LINK_REMOVED_EVENT)
 public class UserFederationLinkRemovedEvent extends InvalidationEvent implements UserCacheInvalidationEvent {
 
     private String userId;
@@ -56,16 +53,35 @@ public class UserFederationLinkRemovedEvent extends InvalidationEvent implements
         return userId;
     }
 
+    void setId(String id) {
+        this.userId = id;
+    }
+
+    @ProtoField(2)
     public String getRealmId() {
         return realmId;
     }
 
+    void setRealmId(String realmId) {
+        this.realmId = realmId;
+    }
+
+    @ProtoField(3)
     public String getIdentityProviderId() {
         return identityProviderId;
     }
 
+    void setIdentityProviderId(String identityProviderId) {
+        this.identityProviderId = identityProviderId;
+    }
+
+    @ProtoField(4)
     public String getSocialUserId() {
         return socialUserId;
+    }
+
+    void setSocialUserId(String socialUserId) {
+        this.socialUserId = socialUserId;
     }
 
     @Override
@@ -80,9 +96,15 @@ public class UserFederationLinkRemovedEvent extends InvalidationEvent implements
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
         UserFederationLinkRemovedEvent that = (UserFederationLinkRemovedEvent) o;
         return Objects.equals(userId, that.userId) && Objects.equals(realmId, that.realmId) && Objects.equals(identityProviderId, that.identityProviderId) && Objects.equals(socialUserId, that.socialUserId);
     }
@@ -92,38 +114,4 @@ public class UserFederationLinkRemovedEvent extends InvalidationEvent implements
         return Objects.hash(super.hashCode(), userId, realmId, identityProviderId, socialUserId);
     }
 
-    public static class ExternalizerImpl implements Externalizer<UserFederationLinkRemovedEvent> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, UserFederationLinkRemovedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.userId, output);
-            MarshallUtil.marshallString(obj.realmId, output);
-            MarshallUtil.marshallString(obj.identityProviderId, output);
-            MarshallUtil.marshallString(obj.socialUserId, output);
-        }
-
-        @Override
-        public UserFederationLinkRemovedEvent readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public UserFederationLinkRemovedEvent readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            UserFederationLinkRemovedEvent res = new UserFederationLinkRemovedEvent();
-            res.userId = MarshallUtil.unmarshallString(input);
-            res.realmId = MarshallUtil.unmarshallString(input);
-            res.identityProviderId = MarshallUtil.unmarshallString(input);
-            res.socialUserId = MarshallUtil.unmarshallString(input);
-
-            return res;
-        }
-    }
 }

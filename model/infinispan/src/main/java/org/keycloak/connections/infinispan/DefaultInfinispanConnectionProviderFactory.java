@@ -47,8 +47,7 @@ import org.keycloak.marshalling.Marshalling;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.cache.infinispan.ClearCacheEvent;
-import org.keycloak.models.cache.infinispan.events.RealmRemovedEvent;
-import org.keycloak.models.cache.infinispan.events.RealmUpdatedEvent;
+import org.keycloak.models.cache.infinispan.events.RealmEvent;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.InvalidationHandler.ObjectType;
@@ -427,9 +426,7 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
             }
         });
         cluster.registerListener(REALM_INVALIDATION_EVENTS, (ClusterEvent event) -> {
-            if (event instanceof RealmUpdatedEvent rr) {
-                sessionFactory.invalidate(null, ObjectType.REALM, rr.getId());
-            } else if (event instanceof RealmRemovedEvent rr) {
+            if (event instanceof RealmEvent rr) {
                 sessionFactory.invalidate(null, ObjectType.REALM, rr.getId());
             }
         });

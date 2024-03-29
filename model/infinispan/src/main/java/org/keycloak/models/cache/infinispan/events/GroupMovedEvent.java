@@ -17,22 +17,19 @@
 
 package org.keycloak.models.cache.infinispan.events;
 
-import java.util.Objects;
-import java.util.Set;
-
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.cache.infinispan.RealmCacheManager;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.marshalling.Marshalling;
+
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@SerializeWith(GroupMovedEvent.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.GROUP_MOVED_EVENT)
 public class GroupMovedEvent extends InvalidationEvent implements RealmCacheInvalidationEvent {
 
     private String groupId;
@@ -54,6 +51,37 @@ public class GroupMovedEvent extends InvalidationEvent implements RealmCacheInva
         return groupId;
     }
 
+    void setId(String id) {
+        this.groupId = id;
+    }
+
+    @ProtoField(2)
+    String getNewParentId() {
+        return newParentId;
+    }
+
+    void setNewParentId(String newParentId) {
+        this.newParentId = newParentId;
+    }
+
+    @ProtoField(3)
+    String getOldParentId() {
+        return oldParentId;
+    }
+
+    void setOldParentId(String oldParentId) {
+        this.oldParentId = oldParentId;
+    }
+
+    @ProtoField(4)
+    String getRealmId() {
+        return realmId;
+    }
+
+    void setRealmId(String realmId) {
+        this.realmId = realmId;
+    }
+
     @Override
     public String toString() {
         return String.format("GroupMovedEvent [ realmId=%s, groupId=%s, newParentId=%s, oldParentId=%s ]", realmId, groupId, newParentId, oldParentId);
@@ -73,9 +101,15 @@ public class GroupMovedEvent extends InvalidationEvent implements RealmCacheInva
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        if (!super.equals(o)) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
         GroupMovedEvent that = (GroupMovedEvent) o;
         return Objects.equals(groupId, that.groupId) && Objects.equals(newParentId, that.newParentId) && Objects.equals(oldParentId, that.oldParentId) && Objects.equals(realmId, that.realmId);
     }
@@ -85,38 +119,4 @@ public class GroupMovedEvent extends InvalidationEvent implements RealmCacheInva
         return Objects.hash(super.hashCode(), groupId, newParentId, oldParentId, realmId);
     }
 
-    public static class ExternalizerImpl implements Externalizer<GroupMovedEvent> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, GroupMovedEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.groupId, output);
-            MarshallUtil.marshallString(obj.newParentId, output);
-            MarshallUtil.marshallString(obj.oldParentId, output);
-            MarshallUtil.marshallString(obj.realmId, output);
-        }
-
-        @Override
-        public GroupMovedEvent readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public GroupMovedEvent readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            GroupMovedEvent res = new GroupMovedEvent();
-            res.groupId = MarshallUtil.unmarshallString(input);
-            res.newParentId = MarshallUtil.unmarshallString(input);
-            res.oldParentId = MarshallUtil.unmarshallString(input);
-            res.realmId = MarshallUtil.unmarshallString(input);
-
-            return res;
-        }
-    }
 }

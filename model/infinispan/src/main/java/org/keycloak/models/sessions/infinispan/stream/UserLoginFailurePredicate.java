@@ -17,23 +17,21 @@
 
 package org.keycloak.models.sessions.infinispan.stream;
 
+import org.infinispan.protostream.annotations.ProtoFactory;
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
+import org.keycloak.marshalling.Marshalling;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
 
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
 import java.util.Map;
 import java.util.function.Predicate;
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
-@SerializeWith(UserLoginFailurePredicate.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.USER_LOGIN_FAILURE_PREDICATE)
 public class UserLoginFailurePredicate implements Predicate<Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>>> {
 
     private final String realm;
@@ -42,41 +40,19 @@ public class UserLoginFailurePredicate implements Predicate<Map.Entry<LoginFailu
         this.realm = realm;
     }
 
+    @ProtoFactory
     public static UserLoginFailurePredicate create(String realm) {
         return new UserLoginFailurePredicate(realm);
     }
 
+    @ProtoField(1)
+    String getRealm() {
+        return realm;
+    }
+
     @Override
     public boolean test(Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> entry) {
-        LoginFailureEntity e = entry.getValue().getEntity();
-        return realm.equals(e.getRealmId());
+        return realm.equals(entry.getValue().getEntity().getRealmId());
     }
 
-    public static class ExternalizerImpl implements Externalizer<UserLoginFailurePredicate> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, UserLoginFailurePredicate obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.realm, output);
-
-        }
-
-        @Override
-        public UserLoginFailurePredicate readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public UserLoginFailurePredicate readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            UserLoginFailurePredicate res = new UserLoginFailurePredicate(MarshallUtil.unmarshallString(input));
-            return res;
-        }
-    }
 }

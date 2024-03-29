@@ -17,26 +17,27 @@
 
 package org.keycloak.keys.infinispan;
 
+import org.infinispan.protostream.annotations.ProtoFactory;
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.models.cache.infinispan.events.InvalidationEvent;
-import java.io.IOException;
-import java.io.ObjectInput;
-import java.io.ObjectOutput;
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
+import org.keycloak.marshalling.Marshalling;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
-@SerializeWith(PublicKeyStorageInvalidationEvent.ExternalizerImpl.class)
+@ProtoTypeId(Marshalling.PUBLIC_KEY_INVALIDATION_EVENT)
 public class PublicKeyStorageInvalidationEvent extends InvalidationEvent {
 
-    private String cacheKey;
+    private final String cacheKey;
 
-    public static PublicKeyStorageInvalidationEvent create(String cacheKey) {
-        PublicKeyStorageInvalidationEvent event = new PublicKeyStorageInvalidationEvent();
-        event.cacheKey = cacheKey;
-        return event;
+    private PublicKeyStorageInvalidationEvent(String cacheKey) {
+        this.cacheKey = cacheKey;
+    }
+
+    @ProtoFactory
+    public static PublicKeyStorageInvalidationEvent create(String id) {
+        return new PublicKeyStorageInvalidationEvent(id);
     }
 
     @Override
@@ -51,35 +52,6 @@ public class PublicKeyStorageInvalidationEvent extends InvalidationEvent {
     @Override
     public String toString() {
         return "PublicKeyStorageInvalidationEvent [ " + cacheKey + " ]";
-    }
-
-    public static class ExternalizerImpl implements Externalizer<PublicKeyStorageInvalidationEvent> {
-
-        private static final int VERSION_1 = 1;
-
-        @Override
-        public void writeObject(ObjectOutput output, PublicKeyStorageInvalidationEvent obj) throws IOException {
-            output.writeByte(VERSION_1);
-
-            MarshallUtil.marshallString(obj.cacheKey, output);
-        }
-
-        @Override
-        public PublicKeyStorageInvalidationEvent readObject(ObjectInput input) throws IOException, ClassNotFoundException {
-            switch (input.readByte()) {
-                case VERSION_1:
-                    return readObjectVersion1(input);
-                default:
-                    throw new IOException("Unknown version");
-            }
-        }
-
-        public PublicKeyStorageInvalidationEvent readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
-            PublicKeyStorageInvalidationEvent res = new PublicKeyStorageInvalidationEvent();
-            res.cacheKey = MarshallUtil.unmarshallString(input);
-
-            return res;
-        }
     }
 
 }

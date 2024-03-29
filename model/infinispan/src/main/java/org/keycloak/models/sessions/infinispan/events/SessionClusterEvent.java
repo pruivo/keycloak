@@ -17,16 +17,17 @@
 
 package org.keycloak.models.sessions.infinispan.events;
 
+import org.infinispan.commons.marshall.MarshallUtil;
+import org.infinispan.protostream.annotations.ProtoField;
 import org.keycloak.cluster.ClusterEvent;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.connections.infinispan.TopologyInfo;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.connections.infinispan.InfinispanUtil;
+
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.Objects;
-
-import org.infinispan.commons.marshall.MarshallUtil;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -61,24 +62,49 @@ public abstract class SessionClusterEvent implements ClusterEvent {
     }
 
 
+    @ProtoField(1)
     public String getRealmId() {
         return realmId;
     }
 
+    void setRealmId(String realmId) {
+        this.realmId = realmId;
+    }
+
+    @ProtoField(2)
     public String getEventKey() {
         return eventKey;
     }
 
+    void setEventKey(String eventKey) {
+        this.eventKey = eventKey;
+    }
+
+    @ProtoField(3)
     public boolean isResendingEvent() {
         return resendingEvent;
     }
 
+    void setResendingEvent(boolean resendingEvent) {
+        this.resendingEvent = resendingEvent;
+    }
+
+    @ProtoField(4)
     public String getSiteId() {
         return siteId;
     }
 
+    void setSiteId(String siteId) {
+        this.siteId = siteId;
+    }
+
+    @ProtoField(5)
     public String getNodeId() {
         return nodeId;
+    }
+
+    void setNodeId(String nodeId) {
+        this.nodeId = nodeId;
     }
 
     @Override
