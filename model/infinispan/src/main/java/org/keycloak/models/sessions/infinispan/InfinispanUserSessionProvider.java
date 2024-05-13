@@ -21,7 +21,13 @@ import org.infinispan.Cache;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.exceptions.HotRodClientException;
 import org.infinispan.commons.api.BasicCache;
+import org.infinispan.configuration.cache.CacheMode;
+import org.infinispan.configuration.cache.Configuration;
+import org.infinispan.configuration.cache.ConfigurationBuilder;
+import org.infinispan.configuration.global.GlobalConfigurationBuilder;
 import org.infinispan.context.Flag;
+import org.infinispan.jboss.marshalling.core.JBossUserMarshaller;
+import org.infinispan.manager.DefaultCacheManager;
 import org.infinispan.stream.CacheCollectors;
 import org.jboss.logging.Logger;
 import org.keycloak.cluster.ClusterProvider;
@@ -29,6 +35,7 @@ import org.keycloak.common.Profile;
 import org.keycloak.common.Profile.Feature;
 import org.keycloak.common.util.Retry;
 import org.keycloak.common.util.Time;
+import org.keycloak.migration.ModelVersion;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
@@ -64,12 +71,16 @@ import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.light.LightweightUserAdapter;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
 
+import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -987,6 +998,64 @@ public class InfinispanUserSessionProvider implements UserSessionProvider, Sessi
                 }, 10, 10);
             }
         }
+    }
+
+    @Override
+    public void migrate(String version) {
+        if (!"25.0.0".equals(version)) {
+            //nothing to migrate
+            return;
+        }
+
+        try (var manager = jbossMarshallingCacheManager()) {
+            migrateSessionCache(manager, sessionCache, clientSessionCache);
+            migrateSessionCache(manager, offlineSessionCache, offlineClientSessionCache);
+        } catch (IOException e) {
+            //non clustered mode, should not happen
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    private static void migrateSessionCache(DefaultCacheManager cacheManager, Cache<String, SessionEntityWrapper<UserSessionEntity>> sessions, Cache<UUID, SessionEntityWrapper<AuthenticatedClientSessionEntity>> clientSessions) {
+        if (sessions.getCacheConfiguration().persistence().stores().isEmpty()) {
+            return;
+        }
+        var jmarSessionCache = toLocalJbossMarhallingCache(cacheManager, sessions);
+        var jmarClientSessionCAche = toLocalJbossMarhallingCache(cacheManager, clientSessions);
+
+        var keys = new ArrayList<>(sessions.keySet());
+        var uuids = new LinkedList<UUID>();
+
+        for (var key : keys) {
+            var wrapper = jmarSessionCache.get(key);
+            wrapper.getEntity().getAuthenticatedClientSessions().forEach((ignored, uuid) -> {
+                uuids.add(uuid);
+                clientSessions.put(uuid, jmarClientSessionCAche.get(uuid));
+            });
+            sessions.put(key, wrapper);
+        }
+        // it removes from persistence the jboss marshalling bytes encoding data (hopefully)
+        uuids.forEach(jmarClientSessionCAche::remove);
+        keys.forEach(jmarSessionCache::remove);
+
+    }
+
+    private static <K, V> Cache<K, V> toLocalJbossMarhallingCache(DefaultCacheManager cacheManager, Cache<K, V> cache) {
+        return cacheManager.createCache(cache.getName(), toLocalConfiguration(cache.getCacheConfiguration()));
+    }
+
+    private static Configuration toLocalConfiguration(Configuration other) {
+        var builder = new ConfigurationBuilder();
+        builder.read(other);
+        builder.clustering().cacheMode(CacheMode.LOCAL);
+        return builder.build();
+    }
+
+    public static DefaultCacheManager jbossMarshallingCacheManager() {
+        var builder = new GlobalConfigurationBuilder().nonClusteredDefault();
+        builder.serialization().marshaller(new JBossUserMarshaller());
+        return new DefaultCacheManager(builder.build());
     }
 
     private <T extends SessionEntity> void importSessionsWithExpiration(Map<? extends Object, SessionEntityWrapper<T>> sessionsById,

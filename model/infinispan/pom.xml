@@ -86,6 +86,12 @@
             <scope>provided</scope>
         </dependency>
 
+        <!-- for migration: jmar -> proto -->
+        <dependency>
+            <groupId>org.infinispan</groupId>
+            <artifactId>infinispan-jboss-marshalling</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

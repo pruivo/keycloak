@@ -17,6 +17,9 @@
 
 package org.keycloak.models.sessions.infinispan.entities;
 
+import org.infinispan.commons.marshall.Externalizer;
+import org.infinispan.commons.marshall.MarshallUtil;
+import org.infinispan.commons.marshall.SerializeWith;
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 import org.infinispan.protostream.annotations.ProtoTypeId;
@@ -24,7 +27,11 @@ import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.marshalling.Marshalling;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
+@SerializeWith(AuthenticatedClientSessionEntity.ExternalizerImpl.class)
 @ProtoTypeId(Marshalling.AUTHENTICATED_CLIENT_SESSION_ENTITY)
 public class AuthenticatedClientSessionEntity extends SessionEntity {
 
@@ -219,4 +227,47 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
     public void setUserSessionId(String userSessionId) {
         this.userSessionId = userSessionId;
     }
+
+    public static class ExternalizerImpl implements Externalizer<AuthenticatedClientSessionEntity> {
+
+        @Override
+        public void writeObject(ObjectOutput output, AuthenticatedClientSessionEntity session) throws IOException {
+            MarshallUtil.marshallUUID(session.id, output, false);
+            MarshallUtil.marshallString(session.getRealmId(), output);
+            MarshallUtil.marshallString(session.getAuthMethod(), output);
+            MarshallUtil.marshallString(session.getRedirectUri(), output);
+            KeycloakMarshallUtil.marshall(session.getTimestamp(), output);
+            MarshallUtil.marshallString(session.getAction(), output);
+
+            Map<String, String> notes = session.getNotes();
+            KeycloakMarshallUtil.writeMap(notes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+
+            MarshallUtil.marshallString(session.getCurrentRefreshToken(), output);
+            KeycloakMarshallUtil.marshall(session.getCurrentRefreshTokenUseCount(), output);
+        }
+
+
+        @Override
+        public AuthenticatedClientSessionEntity readObject(ObjectInput input) throws IOException, ClassNotFoundException {
+            AuthenticatedClientSessionEntity sessionEntity = new AuthenticatedClientSessionEntity(MarshallUtil.unmarshallUUID(input, false));
+
+            sessionEntity.setRealmId(MarshallUtil.unmarshallString(input));
+
+            sessionEntity.setAuthMethod(MarshallUtil.unmarshallString(input));
+            sessionEntity.setRedirectUri(MarshallUtil.unmarshallString(input));
+            sessionEntity.setTimestamp(KeycloakMarshallUtil.unmarshallInteger(input));
+            sessionEntity.setAction(MarshallUtil.unmarshallString(input));
+
+            Map<String, String> notes = KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT,
+                    new KeycloakMarshallUtil.ConcurrentHashMapBuilder<>());
+            sessionEntity.setNotes(notes);
+
+            sessionEntity.setCurrentRefreshToken(MarshallUtil.unmarshallString(input));
+            sessionEntity.setCurrentRefreshTokenUseCount(KeycloakMarshallUtil.unmarshallInteger(input));
+
+            return sessionEntity;
+        }
+
+    }
+
 }

@@ -17,22 +17,33 @@
 
 package org.keycloak.models.sessions.infinispan.entities;
 
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.infinispan.commons.marshall.Externalizer;
+import org.infinispan.commons.marshall.MarshallUtil;
+import org.infinispan.commons.marshall.SerializeWith;
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.jboss.logging.Logger;
 import org.keycloak.marshalling.Marshalling;
-import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
+
+import static org.keycloak.models.UserSessionModel.State;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
+@SerializeWith(UserSessionEntity.ExternalizerImpl.class)
 @ProtoTypeId(Marshalling.USER_SESSION_ENTITY)
 public class UserSessionEntity extends SessionEntity {
 
@@ -60,14 +71,14 @@ public class UserSessionEntity extends SessionEntity {
 
     private int lastSessionRefresh;
 
-    private UserSessionModel.State state;
+    private State state;
 
     public UserSessionEntity(String id) {
         this.id = id;
     }
 
     @ProtoFactory
-    static UserSessionEntity protoFactory(String realmId, String id, String user, String loginUsername, String ipAddress, String authMethod, boolean rememberMe, int started, int lastSessionRefresh, Map<String, String> notes, AuthenticatedClientSessionStore authenticatedClientSessions, UserSessionModel.State state, String brokerSessionId, String brokerUserId) {
+    static UserSessionEntity protoFactory(String realmId, String id, String user, String loginUsername, String ipAddress, String authMethod, boolean rememberMe, int started, int lastSessionRefresh, Map<String, String> notes, AuthenticatedClientSessionStore authenticatedClientSessions, State state, String brokerSessionId, String brokerUserId) {
         var entity = new UserSessionEntity(id);
         entity.setRealmId(realmId);
         entity.setUser(user);
@@ -176,11 +187,11 @@ public class UserSessionEntity extends SessionEntity {
     }
 
     @ProtoField(value = 12)
-    public UserSessionModel.State getState() {
+    public State getState() {
         return state;
     }
 
-    public void setState(UserSessionModel.State state) {
+    public void setState(State state) {
         this.state = state;
     }
 
@@ -248,4 +259,88 @@ public class UserSessionEntity extends SessionEntity {
         return entityWrapper;
     }
 
+
+    public static class ExternalizerImpl implements Externalizer<UserSessionEntity> {
+
+        private static final int VERSION_1 = 1;
+
+        private static final EnumMap<State, Integer> STATE_TO_ID = new EnumMap<>(State.class);
+        private static final Map<Integer, State> ID_TO_STATE = new HashMap<>();
+        static {
+            STATE_TO_ID.put(State.LOGGED_IN, 1);
+            STATE_TO_ID.put(State.LOGGED_OUT, 2);
+            STATE_TO_ID.put(State.LOGGING_OUT, 3);
+
+            for (Map.Entry<State, Integer> entry : STATE_TO_ID.entrySet()) {
+                ID_TO_STATE.put(entry.getValue(), entry.getKey());
+            }
+        }
+
+        @Override
+        public void writeObject(ObjectOutput output, UserSessionEntity session) throws IOException {
+            output.writeByte(VERSION_1);
+
+            MarshallUtil.marshallString(session.getAuthMethod(), output);
+            MarshallUtil.marshallString(session.getBrokerSessionId(), output);
+            MarshallUtil.marshallString(session.getBrokerUserId(), output);
+            MarshallUtil.marshallString(session.getId(), output);
+            MarshallUtil.marshallString(session.getIpAddress(), output);
+            MarshallUtil.marshallString(session.getLoginUsername(), output);
+            MarshallUtil.marshallString(session.getRealmId(), output);
+            MarshallUtil.marshallString(session.getUser(), output);
+
+            KeycloakMarshallUtil.marshall(session.getLastSessionRefresh(), output);
+            KeycloakMarshallUtil.marshall(session.getStarted(), output);
+            output.writeBoolean(session.isRememberMe());
+
+            int state = session.getState() == null ? 0 : STATE_TO_ID.get(session.getState());
+            output.writeInt(state);
+
+            Map<String, String> notes = session.getNotes();
+            KeycloakMarshallUtil.writeMap(notes, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT, output);
+
+            output.writeObject(session.getAuthenticatedClientSessions());
+        }
+
+
+        @Override
+        public UserSessionEntity readObject(ObjectInput input) throws IOException, ClassNotFoundException {
+            switch (input.readByte()) {
+                case VERSION_1:
+                    return readObjectVersion1(input);
+                default:
+                    throw new IOException("Unknown version");
+            }
+        }
+
+        public UserSessionEntity readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
+            String authMethod = MarshallUtil.unmarshallString(input);
+            String brokerSessionId = MarshallUtil.unmarshallString(input);
+            String brokerUserId = MarshallUtil.unmarshallString(input);
+            UserSessionEntity sessionEntity = new UserSessionEntity(MarshallUtil.unmarshallString(input));
+            sessionEntity.setAuthMethod(authMethod);
+            sessionEntity.setBrokerSessionId(brokerSessionId);
+            sessionEntity.setBrokerUserId(brokerUserId);
+            sessionEntity.setIpAddress(MarshallUtil.unmarshallString(input));
+            sessionEntity.setLoginUsername(MarshallUtil.unmarshallString(input));
+            sessionEntity.setRealmId(MarshallUtil.unmarshallString(input));
+            sessionEntity.setUser(MarshallUtil.unmarshallString(input));
+
+            sessionEntity.setLastSessionRefresh(KeycloakMarshallUtil.unmarshallInteger(input));
+            sessionEntity.setStarted(KeycloakMarshallUtil.unmarshallInteger(input));
+            sessionEntity.setRememberMe(input.readBoolean());
+
+            sessionEntity.setState(ID_TO_STATE.get(input.readInt()));
+
+            Map<String, String> notes = KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.STRING_EXT,
+                    new KeycloakMarshallUtil.ConcurrentHashMapBuilder<>());
+            sessionEntity.setNotes(notes);
+
+            AuthenticatedClientSessionStore authSessions = (AuthenticatedClientSessionStore) input.readObject();
+            sessionEntity.setAuthenticatedClientSessions(authSessions);
+
+            return sessionEntity;
+        }
+
+    }
 }

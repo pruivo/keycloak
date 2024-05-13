@@ -59,6 +59,8 @@ public class MigrateTo25_0_0 implements Migration {
 
         //add basic scope to existing clients
         realm.getClientsStream().forEach(c-> c.addClientScope(basicScope, true));
+
+        session.sessions().migrate(VERSION.toString());
     }
 }
 

@@ -208,4 +208,6 @@ public interface UserSessionProvider extends Provider {
     void close();
 
     int getStartupTime(RealmModel realm);
+
+    default void migrate(String version) {}
 }

@@ -16,11 +16,17 @@
  */
 package org.keycloak.models.sessions.infinispan.entities;
 
+import org.infinispan.commons.marshall.Externalizer;
+import org.infinispan.commons.marshall.SerializeWith;
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.marshalling.Marshalling;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,6 +37,7 @@ import java.util.function.BiConsumer;
  *
  * @author hmlnarik
  */
+@SerializeWith(AuthenticatedClientSessionStore.ExternalizerImpl.class)
 @ProtoTypeId(Marshalling.AUTHENTICATED_CLIENT_SESSION_STORE)
 public class AuthenticatedClientSessionStore {
 
@@ -90,4 +97,32 @@ public class AuthenticatedClientSessionStore {
         return this.authenticatedClientSessionIds.toString();
     }
 
+    public static class ExternalizerImpl implements Externalizer<AuthenticatedClientSessionStore> {
+
+        private static final int VERSION_1 = 1;
+
+        @Override
+        public void writeObject(ObjectOutput output, AuthenticatedClientSessionStore obj) throws IOException {
+            output.writeByte(VERSION_1);
+
+            KeycloakMarshallUtil.writeMap(obj.authenticatedClientSessionIds, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, output);
+        }
+
+        @Override
+        public AuthenticatedClientSessionStore readObject(ObjectInput input) throws IOException, ClassNotFoundException {
+            switch (input.readByte()) {
+                case VERSION_1:
+                    return readObjectVersion1(input);
+                default:
+                    throw new IOException("Unknown version");
+            }
+        }
+
+        public AuthenticatedClientSessionStore readObjectVersion1(ObjectInput input) throws IOException, ClassNotFoundException {
+            AuthenticatedClientSessionStore res = new AuthenticatedClientSessionStore(
+              KeycloakMarshallUtil.readMap(input, KeycloakMarshallUtil.STRING_EXT, KeycloakMarshallUtil.UUID_EXT, ConcurrentHashMap::new)
+            );
+            return res;
+        }
+    }
 }
