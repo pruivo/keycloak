@@ -217,12 +217,7 @@ public class CacheManagerFactory {
             var builders = builder.getNamedConfigurationBuilders();
             // remove all distributed caches
             logger.debug("Removing all distributed caches.");
-            // TODO [pruivo] remove all distributed caches after all of them are converted
-            //DISTRIBUTED_REPLICATED_CACHE_NAMES.forEach(builders::remove);
-            builders.remove(WORK_CACHE_NAME);
-            builders.remove(AUTHENTICATION_SESSIONS_CACHE_NAME);
-            builders.remove(ACTION_TOKEN_CACHE);
-            builders.remove(LOGIN_FAILURE_CACHE_NAME);
+            Arrays.stream(CLUSTERED_CACHE_NAMES).forEach(builders::remove);
         }
 
         return new DefaultCacheManager(builder, isStartEagerly());

@@ -17,6 +17,15 @@
 
 package org.keycloak.testsuite.oauth;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.ws.rs.NotFoundException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.jboss.arquillian.graphene.page.Page;
 import org.junit.Assert;
@@ -29,6 +38,7 @@ import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.RoleResource;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.common.Profile;
 import org.keycloak.common.constants.ServiceAccountConstants;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.events.Details;
@@ -56,10 +66,12 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.AbstractKeycloakTest;
 import org.keycloak.testsuite.AssertEvents;
+import org.keycloak.testsuite.ProfileAssume;
 import org.keycloak.testsuite.admin.ApiUtil;
 import org.keycloak.testsuite.auth.page.AuthRealm;
 import org.keycloak.testsuite.pages.LoginPage;
 import org.keycloak.testsuite.updaters.RealmAttributeUpdater;
+import org.keycloak.testsuite.util.AccountHelper;
 import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.ClientManager;
 import org.keycloak.testsuite.util.OAuthClient;
@@ -68,17 +80,10 @@ import org.keycloak.testsuite.util.RealmManager;
 import org.keycloak.testsuite.util.RoleBuilder;
 import org.keycloak.testsuite.util.TokenSignatureUtil;
 import org.keycloak.testsuite.util.UserBuilder;
-import org.keycloak.testsuite.util.AccountHelper;
 import org.keycloak.testsuite.utils.tls.TLSUtils;
 import org.keycloak.util.TokenUtil;
 
-import jakarta.ws.rs.NotFoundException;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.LinkedHashMap;
-import java.util.ArrayList;
-
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
@@ -86,7 +91,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.keycloak.testsuite.Assert.assertExpiration;
 import static org.keycloak.testsuite.admin.AbstractAdminTest.loadJson;
@@ -96,9 +100,6 @@ import static org.keycloak.testsuite.admin.ApiUtil.findUserByUsernameId;
 import static org.keycloak.testsuite.auth.page.AuthRealm.TEST;
 import static org.keycloak.testsuite.util.OAuthClient.APP_ROOT;
 import static org.keycloak.testsuite.util.ServerURLs.getAuthServerContextRoot;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -169,7 +170,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void offlineTokenDisabledForClient() throws Exception {
+    public void offlineTokenDisabledForClient() {
         // Remove offline-access scope from client
         ClientScopeRepresentation offlineScope = adminClient.realm("test").clientScopes().findAll().stream().filter((ClientScopeRepresentation clientScope) -> {
 
@@ -196,7 +197,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void offlineTokenUserNotAllowed() throws Exception {
+    public void offlineTokenUserNotAllowed() {
         String userId = findUserByUsername(adminClient.realm("test"), "keycloak-user@localhost").getId();
 
         oauth.scope(OAuth2Constants.OFFLINE_ACCESS);
@@ -229,7 +230,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void offlineTokenBrowserFlow() throws Exception {
+    public void offlineTokenBrowserFlow() {
         oauth.scope(OAuth2Constants.OFFLINE_ACCESS);
         oauth.clientId("offline-client");
         oauth.redirectUri(offlineClientAppUri);
@@ -747,7 +748,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void offlineTokenBrowserFlowMaxLifespanExpired() throws Exception {
+    public void offlineTokenBrowserFlowMaxLifespanExpired() {
         // expect that offline session expired by max lifespan
         final int MAX_LIFESPAN = 3600;
         final int IDLE_LIFESPAN = 6000;
@@ -755,7 +756,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void offlineTokenBrowserFlowIdleTimeExpired() throws Exception {
+    public void offlineTokenBrowserFlowIdleTimeExpired() {
         // expect that offline session expired by idle time
         final int MAX_LIFESPAN = 3000;
         final int IDLE_LIFESPAN = 600;
@@ -1053,7 +1054,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void refreshTokenUserClientMaxLifespanSmallerThanSession() throws Exception {
+    public void refreshTokenUserClientMaxLifespanSmallerThanSession() {
         oauth.scope(OAuth2Constants.OFFLINE_ACCESS);
         oauth.clientId("offline-client");
         oauth.redirectUri(offlineClientAppUri);
@@ -1100,7 +1101,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void refreshTokenUserClientMaxLifespanGreaterThanSession() throws Exception {
+    public void refreshTokenUserClientMaxLifespanGreaterThanSession() {
         oauth.scope(OAuth2Constants.OFFLINE_ACCESS);
         oauth.clientId("offline-client");
         oauth.redirectUri(offlineClientAppUri);
@@ -1187,7 +1188,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void testClientOfflineSessionMaxLifespan() throws Exception {
+    public void testClientOfflineSessionMaxLifespan() {
         ClientResource client = ApiUtil.findClientByClientId(adminClient.realm("test"), "offline-client");
         ClientRepresentation clientRepresentation = client.toRepresentation();
 
@@ -1239,7 +1240,7 @@ public class OfflineTokenTest extends AbstractKeycloakTest {
     }
 
     @Test
-    public void testClientOfflineSessionIdleTimeout() throws Exception {
+    public void testClientOfflineSessionIdleTimeout() {
         ClientResource client = ApiUtil.findClientByClientId(adminClient.realm("test"), "offline-client");
         ClientRepresentation clientRepresentation = client.toRepresentation();
 

@@ -25,6 +25,7 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.keycloak.common.Profile;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
@@ -179,8 +180,10 @@ public class UserSessionInitializerTest extends KeycloakModelTest {
                     // try to get the user session at other nodes and also at different sites
                     inComittedTransaction(session -> {
                         InfinispanConnectionProvider provider = session.getProvider(InfinispanConnectionProvider.class);
-                        Cache<String, Object> localSessions = provider.getCache(USER_SESSION_CACHE_NAME);
-                        containsSession.get().add(localSessions.containsKey(userSessionId.get()));
+                        if (InfinispanUtils.isEmbeddedInfinispan()) {
+                            Cache<String, Object> localSessions = provider.getCache(USER_SESSION_CACHE_NAME);
+                            containsSession.get().add(localSessions.containsKey(userSessionId.get()));
+                        }
 
                         if (hotRodServer.isPresent()) {
                             RemoteCache<String, Object> remoteSessions = provider.getRemoteCache(USER_SESSION_CACHE_NAME);
@@ -194,7 +197,7 @@ public class UserSessionInitializerTest extends KeycloakModelTest {
         assertThat(containsSession.get(), everyItem(is(true)));
 
         // 3 nodes (first node just creates the session), with Hot Rod server we have local + remote cache, without just local cache
-        int size = hotRodServer.isPresent() ? 6 : 3;
+        int size = hotRodServer.isPresent() && InfinispanUtils.isEmbeddedInfinispan() ? 6 : 3;
         assertThat(containsSession.get().size(), is(size));
     }
 

@@ -34,8 +34,8 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserProvider;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserSessionProvider;
 import org.keycloak.models.session.UserSessionPersisterProvider;
 import org.keycloak.protocol.oidc.OIDCConfigAttributes;
@@ -322,6 +322,7 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
                 Assert.assertNull(getUserSession(session, realm, sessions[0], offline));
                 return null;
             });
+            processExpiration(offline);
         } finally {
             setTimeOffset(0);
         }
@@ -400,5 +401,16 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
             var cache2 = hotRodServer.getHotRodCacheManager2().getCache(cacheName);
             eventually(null, () -> cache1.size() == cache2.size(), 10000, 10, TimeUnit.MILLISECONDS);
         }
+    }
+
+    private void processExpiration(boolean offline) {
+        var hotRodServer = getParameters(HotRodServerRule.class).findFirst();
+        if (hotRodServer.isEmpty()) {
+            return;
+        }
+        // force expired entries to be removed from memory
+        var cacheName = offline ? InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME : InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
+        hotRodServer.get().getHotRodCacheManager().getCache(cacheName).getAdvancedCache().getExpirationManager().processExpiration();
+        hotRodServer.get().getHotRodCacheManager2().getCache(cacheName).getAdvancedCache().getExpirationManager().processExpiration();
     }
 }

@@ -17,6 +17,9 @@
 package org.keycloak.testsuite.model.session;
 
 import org.infinispan.commons.CacheException;
+import org.junit.Assume;
+import org.keycloak.common.Profile;
+import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
@@ -30,6 +33,7 @@ import org.keycloak.models.UserSessionProvider;
 import org.keycloak.models.session.UserSessionPersisterProvider;
 import org.keycloak.models.sessions.infinispan.InfinispanUserSessionProvider;
 import org.keycloak.models.sessions.infinispan.PersistentUserSessionProvider;
+import org.keycloak.models.sessions.infinispan.remote.RemoteUserSessionProvider;
 import org.keycloak.services.managers.RealmManager;
 import org.keycloak.testsuite.model.KeycloakModelTest;
 import org.keycloak.testsuite.model.RequireProvider;
@@ -263,6 +267,8 @@ public class OfflineSessionPersistenceTest extends KeycloakModelTest {
                 ((InfinispanUserSessionProvider) provider).removeLocalUserSessions(realm.getId(), true);
             } else if (provider instanceof PersistentUserSessionProvider) {
                 ((PersistentUserSessionProvider) provider).removeLocalUserSessions(realm.getId(), true);
+            } else if (provider instanceof RemoteUserSessionProvider) {
+                //no-op, session not local
             } else {
                 throw new IllegalStateException("Unknown UserSessionProvider: " + provider);
             }

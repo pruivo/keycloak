@@ -17,15 +17,6 @@
 
 package org.keycloak.models.sessions.infinispan.entities;
 
-import org.infinispan.commons.marshall.Externalizer;
-import org.infinispan.commons.marshall.MarshallUtil;
-import org.infinispan.commons.marshall.SerializeWith;
-import org.jboss.logging.Logger;
-import org.keycloak.models.UserSessionModel;
-import org.keycloak.models.UserSessionModel.State;
-import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
-import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
-
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
@@ -35,6 +26,19 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.infinispan.commons.marshall.Externalizer;
+import org.infinispan.commons.marshall.MarshallUtil;
+import org.infinispan.commons.marshall.SerializeWith;
+import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
+import org.keycloak.models.OfflineUserSessionModel;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.UserSessionModel.State;
+import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -307,5 +311,56 @@ public class UserSessionEntity extends SessionEntity {
             return sessionEntity;
         }
 
+    }
+
+    public static UserSessionEntity create(String id, RealmModel realm, UserModel user, String loginUsername, String ipAddress, String authMethod, boolean rememberMe, String brokerSessionId, String brokerUserId) {
+        UserSessionEntity entity = new UserSessionEntity(id);
+        updateSessionEntity(entity, realm, user, loginUsername, ipAddress, authMethod, rememberMe, brokerSessionId, brokerUserId);
+        return entity;
+    }
+
+    public static void updateSessionEntity(UserSessionEntity entity, RealmModel realm, UserModel user, String loginUsername, String ipAddress, String authMethod, boolean rememberMe, String brokerSessionId, String brokerUserId) {
+        entity.setRealmId(realm.getId());
+        entity.setUser(user.getId());
+        entity.setLoginUsername(loginUsername);
+        entity.setIpAddress(ipAddress);
+        entity.setAuthMethod(authMethod);
+        entity.setRememberMe(rememberMe);
+        entity.setBrokerSessionId(brokerSessionId);
+        entity.setBrokerUserId(brokerUserId);
+
+        int currentTime = Time.currentTime();
+
+        entity.setStarted(currentTime);
+        entity.setLastSessionRefresh(currentTime);
+    }
+
+    public static UserSessionEntity createFromModel(UserSessionModel userSession) {
+        UserSessionEntity entity = new UserSessionEntity(userSession.getId());
+        entity.setRealmId(userSession.getRealm().getId());
+
+        entity.setAuthMethod(userSession.getAuthMethod());
+        entity.setBrokerSessionId(userSession.getBrokerSessionId());
+        entity.setBrokerUserId(userSession.getBrokerUserId());
+        entity.setIpAddress(userSession.getIpAddress());
+        entity.setNotes(userSession.getNotes() == null ? new ConcurrentHashMap<>() : userSession.getNotes());
+        entity.setAuthenticatedClientSessions(new AuthenticatedClientSessionStore());
+        entity.setRememberMe(userSession.isRememberMe());
+        entity.setState(userSession.getState());
+        if (userSession instanceof OfflineUserSessionModel offline) {
+            // this is a hack so that UserModel doesn't have to be available when offline token is imported.
+            // see related JIRA - KEYCLOAK-5350 and corresponding test
+            entity.setUser(offline.getUserId());
+            // NOTE: Hack
+            // We skip calling entity.setLoginUsername(userSession.getLoginUsername())
+        } else {
+            entity.setLoginUsername(userSession.getLoginUsername());
+            entity.setUser(userSession.getUser().getId());
+        }
+
+        entity.setStarted(userSession.getStarted());
+        entity.setLastSessionRefresh(userSession.getLastSessionRefresh());
+
+        return entity;
     }
 }

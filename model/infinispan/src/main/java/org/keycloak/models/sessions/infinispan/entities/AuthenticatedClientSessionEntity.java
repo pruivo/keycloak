@@ -21,16 +21,20 @@ import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.infinispan.commons.marshall.Externalizer;
 import org.infinispan.commons.marshall.MarshallUtil;
 import org.infinispan.commons.marshall.SerializeWith;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.AuthenticatedClientSessionModel;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.util.KeycloakMarshallUtil;
-import java.util.UUID;
 
 /**
  *
@@ -240,6 +244,25 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
             return sessionEntity;
         }
 
+    }
+
+    public static AuthenticatedClientSessionEntity create(UUID clientSessionId, RealmModel realm, ClientModel client, UserSessionModel userSession) {
+        var entity = new AuthenticatedClientSessionEntity(clientSessionId);
+        entity.setRealmId(realm.getId());
+        entity.setClientId(client.getId());
+        entity.setTimestamp(Time.currentTime());
+        entity.getNotes().put(AuthenticatedClientSessionModel.STARTED_AT_NOTE, String.valueOf(entity.getTimestamp()));
+        entity.getNotes().put(AuthenticatedClientSessionModel.USER_SESSION_STARTED_AT_NOTE, String.valueOf(userSession.getStarted()));
+        if (userSession.isRememberMe()) {
+            entity.getNotes().put(AuthenticatedClientSessionModel.USER_SESSION_REMEMBER_ME_NOTE, "true");
+        }
+        return entity;
+    }
+
+    public static AuthenticatedClientSessionEntity createFromModel(AuthenticatedClientSessionModel model) {
+        var entity =  create(UUID.fromString(model.getId()), model.getRealm(), model.getClient(), model.getUserSession());
+        entity.setNotes(model.getNotes() == null ? new ConcurrentHashMap<>() : model.getNotes());
+        return entity;
     }
 
 }

@@ -26,6 +26,8 @@ import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
  */
 public record Expiration(long maxIdle, long lifespan) {
 
+    public static final Expiration IMMORTAL = new Expiration(SessionTimeouts.ENTRY_EXPIRED_FLAG, SessionTimeouts.ENTRY_EXPIRED_FLAG);
+
     public boolean isExpired() {
         return maxIdle == SessionTimeouts.ENTRY_EXPIRED_FLAG || lifespan == SessionTimeouts.ENTRY_EXPIRED_FLAG;
     }

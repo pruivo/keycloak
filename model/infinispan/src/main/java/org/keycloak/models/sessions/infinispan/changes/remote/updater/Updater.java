@@ -69,6 +69,13 @@ public interface Updater<K, V> extends BiFunction<K, V, V> {
     void markDeleted();
 
     /**
+     * @return {@code true} if the entity is transient and shouldn't be stored in the Infinispan cache.
+     */
+    default boolean isTransient() {
+        return false;
+    }
+
+    /**
      * Computes the expiration data for Infinispan cache.
      *
      * @param session The current Keycloak session.
