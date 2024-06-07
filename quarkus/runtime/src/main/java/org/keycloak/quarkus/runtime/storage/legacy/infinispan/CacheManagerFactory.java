@@ -19,14 +19,11 @@ package org.keycloak.quarkus.runtime.storage.legacy.infinispan;
 
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
+import io.agroal.api.AgroalDataSource;
 import io.micrometer.core.instrument.Metrics;
-import org.infinispan.client.hotrod.RemoteCache;
+import io.quarkus.arc.Arc;
 import org.infinispan.client.hotrod.impl.ConfigurationProperties;
 import org.infinispan.commons.api.Lifecycle;
 import org.infinispan.configuration.cache.ConfigurationBuilder;
@@ -48,11 +45,11 @@ import org.jgroups.util.TLSClientAuth;
 import org.keycloak.common.Profile;
 import org.keycloak.config.CachingOptions;
 import org.keycloak.config.MetricsOptions;
-import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.marshalling.Marshalling;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
 import javax.net.ssl.SSLContext;
+import javax.sql.DataSource;
 
 import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_FILE_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_PASSWORD_PROPERTY;
@@ -73,30 +70,27 @@ public class CacheManagerFactory {
 
     private static final Logger logger = Logger.getLogger(CacheManagerFactory.class);
 
-    private final CompletableFuture<DefaultCacheManager> cacheManagerFuture;
+    private final String config;
+    private volatile DefaultCacheManager cacheManager;
 
     public CacheManagerFactory(String config) {
-        this.cacheManagerFuture = startEmbeddedCacheManager(config);
+        this.config = config;
     }
 
     public DefaultCacheManager getOrCreateEmbeddedCacheManager() {
-        return join(cacheManagerFuture);
+        if (cacheManager != null) {
+            return cacheManager;
+        }
+        synchronized (this) {
+            return cacheManager != null ?
+                    cacheManager :
+                    (cacheManager = startEmbeddedCacheManager());
+        }
     }
 
     public void shutdown() {
         logger.debug("Shutdown embedded cache manager");
-        cacheManagerFuture.thenAccept(CacheManagerFactory::close);
-    }
-
-    private static <T> T join(Future<T> future) {
-        try {
-            return future.get(getStartTimeout(), TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
-        } catch (ExecutionException | TimeoutException e) {
-            throw new RuntimeException("Failed to start embedded or remote cache manager", e);
-        }
+        close(cacheManager);
     }
 
     private static void close(Lifecycle lifecycle) {
@@ -105,7 +99,7 @@ public class CacheManagerFactory {
         }
     }
 
-    private CompletableFuture<DefaultCacheManager> startEmbeddedCacheManager(String config) {
+    private DefaultCacheManager startEmbeddedCacheManager() {
         ConfigurationBuilderHolder builder = new ParserRegistry().parse(config);
 
         if (builder.getNamedConfigurationBuilders().entrySet().stream().anyMatch(c -> c.getValue().clustering().cacheMode().isClustered())) {
@@ -150,8 +144,7 @@ public class CacheManagerFactory {
         }
 
         Marshalling.configure(builder.getGlobalConfigurationBuilder());
-        var start = isStartEagerly();
-        return CompletableFuture.supplyAsync(() -> new DefaultCacheManager(builder, start));
+        return new DefaultCacheManager(builder, isStartEagerly());
     }
 
     private static boolean isRemoteTLSEnabled() {
@@ -191,6 +184,13 @@ public class CacheManagerFactory {
             transportConfig.defaultTransport().stack(transportStack);
         }
 
+        var dataSource = Arc.container().select(AgroalDataSource.class);
+        if (dataSource.isResolvable()) {
+            logger.info("Found datasource: " + dataSource.get());
+            Supplier<DataSource> dataSourceSupplier = dataSource::get;
+            transportConfig.addProperty(JGroupsTransport.DATA_SOURCE, dataSourceSupplier);
+        }
+
         if (Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED_PROPERTY)) {
             validateTlsAvailable(transportConfig.build());
             var tls = new TLS()
@@ -204,7 +204,7 @@ public class CacheManagerFactory {
                     .setClientAuth(TLSClientAuth.NEED)
                     .setProtocols(new String[]{"TLSv1.3"});
             transportConfig.addProperty(JGroupsTransport.SOCKET_FACTORY, tls.createSocketFactory());
-            Logger.getLogger(CacheManagerFactory.class).info("MTLS enabled for communications for embedded caches");
+            logger.info("MTLS enabled for communications for embedded caches");
         }
     }
 
