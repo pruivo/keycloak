@@ -225,12 +225,14 @@ public class InfinispanChangelogBasedTransaction<K, V extends SessionEntity> ext
     private void replace(K key, MergedUpdate<V> task, SessionEntityWrapper<V> oldVersionEntity, long lifespanMs, long maxIdleTimeMs) {
         SessionEntityWrapper<V> oldVersion = oldVersionEntity;
         SessionEntityWrapper<V> returnValue = null;
+        ReplaceFunction<K, V> replaceFunction = null;
         int iteration = 0;
         V session = oldVersion.getEntity();
         var writeCache = CacheDecorators.skipCacheStoreIfRemoteCacheIsEnabled(cache);
         while (iteration++ < InfinispanUtil.MAXIMUM_REPLACE_RETRIES) {
             SessionEntityWrapper<V> newVersionEntity = generateNewVersionAndWrapEntity(session, oldVersion.getLocalMetadata());
-            returnValue = writeCache.computeIfPresent(key, new ReplaceFunction<>(oldVersion.getVersion(), newVersionEntity), lifespanMs, TimeUnit.MILLISECONDS, maxIdleTimeMs, TimeUnit.MILLISECONDS);
+            replaceFunction = new ReplaceFunction<>(oldVersion.getVersion(), newVersionEntity);
+            returnValue = writeCache.computeIfPresent(key, replaceFunction, lifespanMs, TimeUnit.MILLISECONDS, maxIdleTimeMs, TimeUnit.MILLISECONDS);
 
             if (returnValue == null) {
                 logger.debugf("Entity %s not found. Maybe removed in the meantime. Replace task will be ignored", key);
@@ -244,11 +246,13 @@ public class InfinispanChangelogBasedTransaction<K, V extends SessionEntity> ext
                 return;
             }
 
+            logger.infof("Replace failed. cache=%s, iteration=%s, key=%s, function=%s, return value=%s", cache.getName(), iteration, key, replaceFunction, returnValue);
+
             oldVersion = returnValue;
             session = oldVersion.getEntity();
             task.runUpdate(session);
         }
-        logger.warnf("Failed to replace entity '%s' in cache '%s'. Expected: %s, Current: %s", key, cache.getName(), oldVersion, returnValue);
+        logger.warnf("Failed to replace entity '%s' in cache '%s'. Function: %s, Current: %s", key, cache.getName(), replaceFunction, returnValue);
     }
 
 

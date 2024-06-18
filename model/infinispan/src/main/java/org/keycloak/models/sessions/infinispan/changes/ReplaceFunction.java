@@ -37,6 +37,14 @@ public class ReplaceFunction<K, T extends SessionEntity> implements BiFunction<K
         return expectedVersion.equals(currentValue.getVersion()) ? newValue : currentValue;
     }
 
+    @Override
+    public String toString() {
+        return "ReplaceFunction{" +
+                "expectedVersion=" + expectedVersion +
+                ", newValue=" + newValue +
+                '}';
+    }
+
     @SuppressWarnings({"removal", "rawtypes"})
     private static class Externalizer implements AdvancedExternalizer<ReplaceFunction> {
 
