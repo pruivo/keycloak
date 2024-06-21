@@ -16,6 +16,7 @@
  */
 package org.keycloak.models.sessions.infinispan.changes.remote;
 
+import java.lang.invoke.MethodHandles;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -25,18 +26,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
 import org.infinispan.client.hotrod.Flag;
 import org.infinispan.client.hotrod.MetadataValue;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.commons.util.concurrent.AggregateCompletionStage;
 import org.infinispan.commons.util.concurrent.CompletableFutures;
 import org.infinispan.commons.util.concurrent.CompletionStages;
+import org.jboss.logging.Logger;
 import org.keycloak.models.AbstractKeycloakTransaction;
 import org.keycloak.models.KeycloakTransaction;
 import org.keycloak.models.sessions.infinispan.changes.remote.updater.Expiration;
 import org.keycloak.models.sessions.infinispan.changes.remote.updater.Updater;
 import org.keycloak.models.sessions.infinispan.changes.remote.updater.UpdaterFactory;
+import org.keycloak.models.sessions.infinispan.query.DeleteQuery;
 
 /**
  * A {@link KeycloakTransaction} implementation that keeps track of changes made to entities stored
@@ -48,11 +50,12 @@ import org.keycloak.models.sessions.infinispan.changes.remote.updater.UpdaterFac
  */
 public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends AbstractKeycloakTransaction {
 
+    private static final Logger log = Logger.getLogger(MethodHandles.lookup().lookupClass());
 
     private final Map<K, T> entityChanges;
     private final UpdaterFactory<K, V, T> factory;
     private final RemoteCache<K, V> cache;
-    private Predicate<V> removePredicate;
+    private DeleteQuery<K, V> removePredicate;
 
     public RemoteChangeLogTransaction(UpdaterFactory<K, V, T> factory, RemoteCache<K, V> cache) {
         this.factory = Objects.requireNonNull(factory);
@@ -64,6 +67,7 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
     protected void commitImpl() {
         var stage = CompletionStages.aggregateCompletionStage();
         doCommit(stage);
+        invokeDeleteQuery();
         CompletionStages.join(stage.freeze());
         entityChanges.clear();
         removePredicate = null;
@@ -85,17 +89,17 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
         state = TransactionState.FINISHED;
     }
 
-    private void doCommit(AggregateCompletionStage<Void> stage) {
-        if (removePredicate != null) {
-            // TODO [pruivo] [optimization] with protostream, use delete by query: DELETE FROM ...
-            var rmStage = Flowable.fromPublisher(cache.publishEntriesWithMetadata(null, 2048))
-                    .filter(e -> removePredicate.test(e.getValue().getValue()))
-                    .map(Map.Entry::getKey)
-                    .flatMapCompletable(this::removeKey)
-                    .toCompletionStage(null);
-            stage.dependsOn(rmStage);
+    public void invokeDeleteQuery() {
+        if (removePredicate == null) {
+            return;
         }
+        var removed = removePredicate.executeStatement(cache);
+        if (log.isTraceEnabled()) {
+            log.tracef("Removed %s entries with query %s", removed, removePredicate);
+        }
+    }
 
+    private void doCommit(AggregateCompletionStage<Void> stage) {
         for (var updater : entityChanges.values()) {
             if (updater.isReadOnly() || updater.isTransient() || (removePredicate != null && removePredicate.test(updater.getValue()))) {
                 continue;
@@ -117,7 +121,13 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
                 continue;
             }
 
-            stage.dependsOn(replace(updater, expiration));
+            if (updater.hasVersion()) {
+                stage.dependsOn(replace(updater, expiration));
+                continue;
+            }
+
+            // no version, we need to fetch and merge the changes
+            stage.dependsOn(merge(updater, expiration));
         }
     }
 
@@ -190,15 +200,16 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
      *
      * @param predicate The {@link Predicate} which returns {@code true} for elements to be removed.
      */
-    public void removeIf(Predicate<V> predicate) {
-        if (removePredicate == null) {
-            removePredicate = predicate;
-            return;
-        }
-        removePredicate = removePredicate.or(predicate);
+    public void removeIf(DeleteQuery<K, V> predicate) {
+        assert removePredicate != null;
+        removePredicate = predicate;
     }
 
     public T wrap(Map.Entry<K, MetadataValue<V>> entry) {
+        return entityChanges.computeIfAbsent(entry.getKey(), k -> factory.wrapFromCache(k, entry.getValue()));
+    }
+
+    public T wrapWithoutVersion(Map.Entry<K, V> entry) {
         return entityChanges.computeIfAbsent(entry.getKey(), k -> factory.wrapFromCache(k, entry.getValue()));
     }
 

@@ -289,6 +289,12 @@ public class UserSessionUpdater extends BaseUpdater<String, UserSessionEntity> i
         }
 
         @Override
+        public UserSessionUpdater wrapFromCache(String key, UserSessionEntity entity) {
+            assert entity != null;
+            return new UserSessionUpdater(key, Objects.requireNonNull(entity), -1, offline, UpdaterState.READ_WITH_NO_VERSION);
+        }
+
+        @Override
         public UserSessionUpdater deleted(String key) {
             return new UserSessionUpdater(key, null, -1, offline, UpdaterState.DELETED);
         }

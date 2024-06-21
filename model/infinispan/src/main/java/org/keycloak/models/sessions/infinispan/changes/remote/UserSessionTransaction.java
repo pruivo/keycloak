@@ -47,6 +47,12 @@ public class UserSessionTransaction extends AbstractKeycloakTransaction {
         offlineUserSessions.commitAsync(stage);
         clientSessions.commitAsync(stage);
         offlineClientSessions.commitAsync(stage);
+
+        userSessions.invokeDeleteQuery();
+        offlineUserSessions.invokeDeleteQuery();
+        clientSessions.invokeDeleteQuery();
+        offlineUserSessions.invokeDeleteQuery();
+
         CompletionStages.join(stage.freeze());
     }
 

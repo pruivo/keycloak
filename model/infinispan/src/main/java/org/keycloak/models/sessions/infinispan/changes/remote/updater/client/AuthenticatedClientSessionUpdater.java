@@ -246,6 +246,12 @@ public class AuthenticatedClientSessionUpdater extends BaseUpdater<UUID, Authent
         }
 
         @Override
+        public AuthenticatedClientSessionUpdater wrapFromCache(UUID key, AuthenticatedClientSessionEntity entity) {
+            assert entity != null;
+            return new AuthenticatedClientSessionUpdater(key, Objects.requireNonNull(entity), -1, offline, UpdaterState.READ_WITH_NO_VERSION);
+        }
+
+        @Override
         public AuthenticatedClientSessionUpdater deleted(UUID key) {
             return new AuthenticatedClientSessionUpdater(key, null, -1, offline, UpdaterState.DELETED);
         }

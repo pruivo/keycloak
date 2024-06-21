@@ -99,6 +99,12 @@ public class RemoteUserLoginFailureProviderFactory implements UserLoginFailurePr
     }
 
     @Override
+    public LoginFailuresUpdater wrapFromCache(LoginFailureKey key, LoginFailureEntity entity) {
+        assert entity != null;
+        return LoginFailuresUpdater.wrap(key, entity);
+    }
+
+    @Override
     public LoginFailuresUpdater deleted(LoginFailureKey key) {
         return LoginFailuresUpdater.delete(key);
     }

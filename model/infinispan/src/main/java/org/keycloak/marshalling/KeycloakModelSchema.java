@@ -92,7 +92,7 @@ import org.keycloak.storage.managers.UserStorageSyncManager;
 
 @ProtoSchema(
         syntax = ProtoSyntax.PROTO3,
-        schemaPackageName = "keycloak",
+        schemaPackageName = Marshalling.PROTO_SCHEMA_PACKAGE,
         schemaFilePath = "proto/generated",
 
         // common-types for UUID

@@ -36,6 +36,7 @@ import java.util.stream.Stream;
 import io.reactivex.rxjava3.core.Flowable;
 import org.infinispan.client.hotrod.MetadataValue;
 import org.infinispan.client.hotrod.RemoteCache;
+import org.infinispan.client.hotrod.Search;
 import org.infinispan.commons.util.concurrent.CompletableFutures;
 import org.infinispan.commons.util.concurrent.CompletionStages;
 import org.jboss.logging.Logger;
@@ -61,8 +62,9 @@ import org.keycloak.models.sessions.infinispan.changes.remote.updater.user.Clien
 import org.keycloak.models.sessions.infinispan.changes.remote.updater.user.UserSessionUpdater;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionStore;
-import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
+import org.keycloak.models.sessions.infinispan.query.QueryHelper;
+import org.keycloak.models.sessions.infinispan.query.RealmDeleteQuery;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.utils.StreamsUtil;
 
@@ -132,7 +134,7 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
 
     @Override
     public Stream<UserSessionModel> getUserSessionsStream(RealmModel realm, UserModel user) {
-        return StreamsUtil.closing(streamUserSessions(new UserAndRealmPredicate(realm.getId(), user.getId()), realm, user, false));
+        return userSessionsStream(realm, user, false);
     }
 
     @Override
@@ -147,14 +149,20 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
 
     @Override
     public Stream<UserSessionModel> getUserSessionByBrokerUserIdStream(RealmModel realm, String brokerUserId) {
-        return StreamsUtil.closing(streamUserSessions(new BrokerUserIdAndRealmPredicate(realm.getId(), brokerUserId), realm, null, false));
+        return userSessionByBrokerUserIdStream(realm, brokerUserId, false);
     }
 
     @Override
     public UserSessionModel getUserSessionByBrokerSessionId(RealmModel realm, String brokerSessionId) {
-        return StreamsUtil.closing(streamUserSessions(new BrokerSessionIdAndRealmPredicate(realm.getId(), brokerSessionId), realm, null, false))
-                .findFirst()
-                .orElse(null);
+        var userSessions = getUserSessionTransaction(false);
+        var queryFilter = Search.getQueryFactory(userSessions.getCache())
+                .create(QueryHelper.USER_SESSIONS_BY_REALM_AND_BROKER_SESSION)
+                .setParameters(QueryHelper.realmAndBrokerSessionParameters(realm.getId(), brokerSessionId));
+        return Flowable.fromPublisher(userSessions.getCache().<UserSessionEntity>publishEntriesByQuery(queryFilter, null, 1))
+                .firstElement()
+                .map(userSessions::wrapWithoutVersion)
+                .mapOptional(s -> initFromStream(s, realm, null, false))
+                .blockingGet();
     }
 
     @Override
@@ -203,22 +211,18 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
         //rely on Infinispan expiration
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void removeUserSessions(RealmModel realm) {
-        Predicate<? extends SessionEntity> predicate = e -> Objects.equals(e.getRealmId(), realm.getId());
-        transaction.getUserSessions().removeIf((Predicate<UserSessionEntity>) predicate);
-        transaction.getClientSessions().removeIf((Predicate<AuthenticatedClientSessionEntity>) predicate);
+        transaction.getUserSessions().removeIf(RealmDeleteQuery.deleteUserSessions(realm));
+        transaction.getClientSessions().removeIf(RealmDeleteQuery.deleteClientSessions(realm));
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public void onRealmRemoved(RealmModel realm) {
-        Predicate<? extends SessionEntity> predicate = e -> Objects.equals(e.getRealmId(), realm.getId());
-        transaction.getUserSessions().removeIf((Predicate<UserSessionEntity>) predicate);
-        transaction.getOfflineUserSessions().removeIf((Predicate<UserSessionEntity>) predicate);
-        transaction.getClientSessions().removeIf((Predicate<AuthenticatedClientSessionEntity>) predicate);
-        transaction.getOfflineClientSessions().removeIf((Predicate<AuthenticatedClientSessionEntity>) predicate);
+        transaction.getUserSessions().removeIf(RealmDeleteQuery.deleteUserSessions(realm));
+        transaction.getOfflineUserSessions().removeIf(RealmDeleteQuery.deleteUserSessions(realm));
+        transaction.getClientSessions().removeIf(RealmDeleteQuery.deleteClientSessions(realm));
+        transaction.getOfflineClientSessions().removeIf(RealmDeleteQuery.deleteClientSessions(realm));
         var database = session.getProvider(UserSessionPersisterProvider.class);
         if (database != null) {
             database.onRealmRemoved(realm);
@@ -269,12 +273,12 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
 
     @Override
     public Stream<UserSessionModel> getOfflineUserSessionsStream(RealmModel realm, UserModel user) {
-        return StreamsUtil.closing(streamUserSessions(new UserAndRealmPredicate(realm.getId(), user.getId()), realm, user, true));
+        return userSessionsStream(realm, user, true);
     }
 
     @Override
     public Stream<UserSessionModel> getOfflineUserSessionByBrokerUserIdStream(RealmModel realm, String brokerUserId) {
-        return StreamsUtil.closing(streamUserSessions(new BrokerUserIdAndRealmPredicate(realm.getId(), brokerUserId), realm, null, true));
+        return userSessionByBrokerUserIdStream(realm, brokerUserId, true);
     }
 
     @Override
@@ -313,7 +317,14 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
             migrateUserSessions(true);
             migrateUserSessions(false);
         }
+    }
 
+    private Stream<UserSessionModel> userSessionsStream(RealmModel realm, UserModel user, boolean offline) {
+        return StreamsUtil.closing(streamUserSessions(QueryHelper.USER_SESSIONS_BY_REALM_AND_USER, QueryHelper.realmAndUserParameters(realm.getId(), user.getId()), realm, user, offline));
+    }
+
+    private Stream<UserSessionModel> userSessionByBrokerUserIdStream(RealmModel realm, String brokerUserId, boolean offline) {
+        return StreamsUtil.closing(streamUserSessions(QueryHelper.USER_SESSIONS_BY_REALM_AND_BROKER_USER, QueryHelper.realmAndBrokerUserParameters(realm.getId(), brokerUserId), realm, null, offline));
     }
 
     private void migrateUserSessions(boolean offline) {
@@ -396,13 +407,26 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
     }
 
     private Stream<UserSessionModel> streamUserSessions(InternalUserSessionPredicate predicate, RealmModel realm, UserModel user, boolean offline) {
+        // we still need predicates since Infinispan does not support Map.contains in protobuf entities.
         var userSessions = getUserSessionTransaction(offline);
         return Flowable.fromPublisher(userSessions.getCache().publishEntriesWithMetadata(null, batchSize))
                 .filter(predicate)
                 .map(userSessions::wrap)
-                .map(s -> initFromStream(s, realm, user, offline))
-                .filter(Optional::isPresent)
-                .map(Optional::get)
+                .mapOptional(s -> initFromStream(s, realm, user, offline))
+                .map(UserSessionModel.class::cast)
+                .blockingStream(batchSize);
+    }
+
+    private Stream<UserSessionModel> streamUserSessions(String query, Map<String, Object> parameters, RealmModel realm, UserModel user, boolean offline) {
+        var userSessions = getUserSessionTransaction(offline);
+        // TODO [pruivo] Search.getQueryFactory will be removed after https://issues.redhat.com/browse/ISPN-16220
+        //noinspection deprecation
+        var queryFilter = Search.getQueryFactory(userSessions.getCache())
+                .create(query)
+                .setParameters(parameters);
+        return Flowable.fromPublisher(userSessions.getCache().<UserSessionEntity>publishEntriesByQuery(queryFilter, null, batchSize))
+                .map(userSessions::wrapWithoutVersion)
+                .mapOptional(s -> initFromStream(s, realm, user, offline))
                 .map(UserSessionModel.class::cast)
                 .blockingStream(batchSize);
     }
@@ -480,37 +504,11 @@ public class RemoteUserSessionProvider implements UserSessionProvider {
         boolean testUserSession(UserSessionEntity userSession);
     }
 
-    private record UserAndRealmPredicate(String realmId, String userId) implements InternalUserSessionPredicate {
-
-        @Override
-        public boolean testUserSession(UserSessionEntity userSession) {
-            return Objects.equals(userSession.getRealmId(), realmId) && Objects.equals(userSession.getUser(), userId);
-        }
-
-    }
-
     private record ClientAndRealmPredicate(String realmId, String clientId) implements InternalUserSessionPredicate {
 
         @Override
         public boolean testUserSession(UserSessionEntity userSession) {
             return Objects.equals(userSession.getRealmId(), realmId) && userSession.getAuthenticatedClientSessions().containsKey(clientId);
-        }
-    }
-
-    private record BrokerUserIdAndRealmPredicate(String realmId, String brokerUserId) implements InternalUserSessionPredicate {
-
-        @Override
-        public boolean testUserSession(UserSessionEntity userSession) {
-            return Objects.equals(userSession.getRealmId(), realmId) && Objects.equals(userSession.getBrokerUserId(), brokerUserId);
-        }
-    }
-
-    private record BrokerSessionIdAndRealmPredicate(String realmId,
-                                                    String brokeSessionId) implements InternalUserSessionPredicate {
-
-        @Override
-        public boolean testUserSession(UserSessionEntity userSession) {
-            return Objects.equals(userSession.getRealmId(), realmId) && Objects.equals(userSession.getBrokerSessionId(), brokeSessionId);
         }
     }
 

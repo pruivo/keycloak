@@ -26,14 +26,12 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Flowable;
-import org.infinispan.client.hotrod.MetadataValue;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.commons.util.concurrent.AggregateCompletionStage;
 import org.infinispan.commons.util.concurrent.CompletionStages;
 import org.jboss.logging.Logger;
 import org.keycloak.models.AbstractKeycloakTransaction;
+import org.keycloak.models.sessions.infinispan.query.DeleteQuery;
 
 public class RemoteInfinispanKeycloakTransaction<K, V> extends AbstractKeycloakTransaction {
 
@@ -41,7 +39,7 @@ public class RemoteInfinispanKeycloakTransaction<K, V> extends AbstractKeycloakT
 
     private final Map<K, Operation<K, V>> tasks = new LinkedHashMap<>();
     private final RemoteCache<K, V> cache;
-    private Predicate<V> removePredicate;
+    private DeleteQuery<K, V> removePredicate;
 
     public RemoteInfinispanKeycloakTransaction(RemoteCache<K, V> cache) {
         this.cache = Objects.requireNonNull(cache);
@@ -50,19 +48,18 @@ public class RemoteInfinispanKeycloakTransaction<K, V> extends AbstractKeycloakT
     @Override
     protected void commitImpl() {
         AggregateCompletionStage<Void> stage = CompletionStages.aggregateCompletionStage();
-        if (removePredicate != null) {
-            // TODO [pruivo] [optimization] with protostream, use delete by query: DELETE FROM ...
-            var rmStage = Flowable.fromPublisher(cache.publishEntriesWithMetadata(null, 2048))
-                    .filter(this::shouldRemoveEntry)
-                    .map(Map.Entry::getKey)
-                    .flatMapCompletable(this::removeKey)
-                    .toCompletionStage(null);
-            stage.dependsOn(rmStage);
-        }
         tasks.values().stream()
                 .filter(this::shouldCommitOperation)
                 .map(this::commitOperation)
                 .forEach(stage::dependsOn);
+
+        if (removePredicate != null) {
+            var removed = removePredicate.executeStatement(cache);
+            if (logger.isTraceEnabled()) {
+                logger.tracef("Removed %s entries with query %s", removed, removePredicate);
+            }
+        }
+
         CompletionStages.join(stage.freeze());
         tasks.clear();
     }
@@ -128,16 +125,9 @@ public class RemoteInfinispanKeycloakTransaction<K, V> extends AbstractKeycloakT
      *
      * @param predicate The {@link Predicate} which returns {@code true} for elements to be removed.
      */
-    public void removeIf(Predicate<V> predicate) {
-        if (removePredicate == null) {
-            removePredicate = predicate;
-            return;
-        }
-        removePredicate = removePredicate.or(predicate);
-    }
-
-    private Completable removeKey(K key) {
-        return Completable.fromCompletionStage(cache.removeAsync(key));
+    public void removeIf(DeleteQuery<K, V> predicate) {
+        // TODO can we have more than one query or mass removal?
+        removePredicate = predicate;
     }
 
     private boolean shouldCommitOperation(Operation<K, V> operation) {
@@ -148,12 +138,6 @@ public class RemoteInfinispanKeycloakTransaction<K, V> extends AbstractKeycloakT
         return !operation.hasValue() ||
                 removePredicate == null ||
                 !removePredicate.test(operation.getValue());
-    }
-
-    private boolean shouldRemoveEntry(Map.Entry<K, MetadataValue<V>> entry) {
-        // invoked by stream, so removePredicate is not null
-        assert removePredicate != null;
-        return removePredicate.test(entry.getValue().getValue());
     }
 
     private CompletionStage<?> commitOperation(Operation<K, V> operation) {

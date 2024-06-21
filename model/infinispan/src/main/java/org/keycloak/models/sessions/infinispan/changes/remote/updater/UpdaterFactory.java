@@ -46,6 +46,18 @@ public interface UpdaterFactory<K, V, T extends Updater<K, V>> {
     T wrapFromCache(K key, MetadataValue<V> entity);
 
     /**
+     * Wraps an entity read from the Infinispan cache.
+     * <p>
+     * Compared with {@link #wrapFromCache(Object, MetadataValue)}, this method should be invoked when the metadata
+     * (version) is not available.
+     *
+     * @param key    The Infinispan key.
+     * @param entity The Infinispan value.
+     * @return The {@link Updater} to be used when updating the entity state.
+     */
+    T wrapFromCache(K key, V entity);
+
+    /**
      * Deletes a entity that was not previous read by the Keycloak transaction.
      *
      * @param key The Infinispan key.

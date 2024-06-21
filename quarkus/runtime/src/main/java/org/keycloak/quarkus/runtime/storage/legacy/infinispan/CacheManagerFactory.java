@@ -20,6 +20,7 @@ package org.keycloak.quarkus.runtime.storage.legacy.infinispan;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -27,11 +28,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import io.micrometer.core.instrument.Metrics;
-import org.infinispan.client.hotrod.DefaultTemplate;
+import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.impl.ConfigurationProperties;
 import org.infinispan.commons.api.Lifecycle;
+import org.infinispan.commons.dataconversion.MediaType;
+import org.infinispan.commons.internal.InternalCacheNames;
 import org.infinispan.commons.util.concurrent.CompletableFutures;
+import org.infinispan.configuration.cache.CacheMode;
 import org.infinispan.configuration.cache.ConfigurationBuilder;
 import org.infinispan.configuration.cache.HashConfiguration;
 import org.infinispan.configuration.cache.PersistenceConfigurationBuilder;
@@ -52,6 +56,7 @@ import org.keycloak.common.Profile;
 import org.keycloak.config.CachingOptions;
 import org.keycloak.config.MetricsOptions;
 import org.keycloak.infinispan.util.InfinispanUtils;
+import org.keycloak.marshalling.KeycloakModelSchema;
 import org.keycloak.marshalling.Marshalling;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
@@ -65,15 +70,11 @@ import static org.keycloak.config.CachingOptions.CACHE_REMOTE_HOST_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_PASSWORD_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_PORT_PROPERTY;
 import static org.keycloak.config.CachingOptions.CACHE_REMOTE_USERNAME_PROPERTY;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.ACTION_TOKEN_CACHE;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHENTICATION_SESSIONS_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLUSTERED_CACHE_NAMES;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.LOGIN_FAILURE_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
 import static org.wildfly.security.sasl.util.SaslMechanismInformation.Names.SCRAM_SHA_512;
 
 public class CacheManagerFactory {
@@ -159,18 +160,51 @@ public class CacheManagerFactory {
         if (createRemoteCaches()) {
             // fall back for distributed caches if not defined
             logger.warn("Creating remote cache in external Infinispan server. It should not be used in production!");
+            var remoteBuilder = new ConfigurationBuilder();
+            remoteBuilder.clustering().cacheMode(CacheMode.DIST_SYNC);
+            remoteBuilder.clustering().hash().numOwners(2);
+            remoteBuilder.encoding().mediaType(MediaType.APPLICATION_PROTOSTREAM);
+            var remoteConfig = remoteBuilder.build();
             for (String name : CLUSTERED_CACHE_NAMES) {
-                builder.remoteCache(name).templateName(DefaultTemplate.DIST_SYNC);
+                builder.remoteCache(name).configuration(remoteConfig.toStringConfiguration(name));
             }
         }
 
-        RemoteCacheManager remoteCacheManager = new RemoteCacheManager(builder.build());
+        var remoteCacheManager = new RemoteCacheManager(builder.build());
+
+        // update the schema before trying to access the caches
+        updateProtoSchema(remoteCacheManager);
 
         // establish connection to all caches
         if (isStartEagerly()) {
             Arrays.stream(CLUSTERED_CACHE_NAMES).forEach(remoteCacheManager::getCache);
         }
         return remoteCacheManager;
+    }
+
+    private void updateProtoSchema(RemoteCacheManager remoteCacheManager) {
+        var key = KeycloakModelSchema.INSTANCE.getProtoFileName();
+        var current = KeycloakModelSchema.INSTANCE.getProtoFile();
+
+        RemoteCache<String, String> protostreamMetadataCache = remoteCacheManager.getCache(InternalCacheNames.PROTOBUF_METADATA_CACHE_NAME);
+        var stored = protostreamMetadataCache.getWithMetadata(key);
+        if (stored == null) {
+            if (protostreamMetadataCache.putIfAbsent(key, current) == null) {
+                logger.info("Infinispan Protostream schema uploaded for the first time.");
+            } else {
+                logger.info("Failed to update Infinispan Protostream schema. Assumed it was updated by other Keycloak server.");
+            }
+            return;
+        }
+        if (Objects.equals(stored.getValue(), current)) {
+            logger.info("Infinispan Protostream schema is up to date!");
+            return;
+        }
+        if (protostreamMetadataCache.replaceWithVersion(key, current, stored.getVersion())) {
+            logger.info("Infinispan Protostream schema successful updated.");
+        } else {
+            logger.info("Failed to update Infinispan Protostream schema. Assumed it was updated by other Keycloak server.");
+        }
     }
 
     private CompletableFuture<DefaultCacheManager> startEmbeddedCacheManager(String config) {

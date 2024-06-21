@@ -27,6 +27,7 @@ import org.keycloak.models.sessions.infinispan.changes.remote.RemoteChangeLogTra
 import org.keycloak.models.sessions.infinispan.changes.remote.updater.loginfailures.LoginFailuresUpdater;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
+import org.keycloak.models.sessions.infinispan.query.RealmDeleteQuery;
 
 import static org.keycloak.common.util.StackUtil.getShortStackTrace;
 
@@ -75,7 +76,7 @@ public class RemoteUserLoginFailureProvider implements UserLoginFailureProvider 
             log.tracef("removeAllUserLoginFailures(%s)%s", realm, getShortStackTrace());
         }
 
-        transaction.removeIf(entity -> Objects.equals(entity.getRealmId(), realm.getId()));
+        transaction.removeIf(RealmDeleteQuery.deleteLoginFailures(realm));
     }
 
     @Override

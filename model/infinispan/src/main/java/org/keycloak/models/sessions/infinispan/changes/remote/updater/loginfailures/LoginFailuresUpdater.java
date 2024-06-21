@@ -57,6 +57,10 @@ public class LoginFailuresUpdater extends BaseUpdater<LoginFailureKey, LoginFail
         return new LoginFailuresUpdater(Objects.requireNonNull(key), Objects.requireNonNull(entity.getValue()), entity.getVersion(), UpdaterState.READ);
     }
 
+    public static LoginFailuresUpdater wrap(LoginFailureKey key, LoginFailureEntity entity) {
+        return new LoginFailuresUpdater(Objects.requireNonNull(key), Objects.requireNonNull(entity), -1, UpdaterState.READ_WITH_NO_VERSION);
+    }
+
     public static LoginFailuresUpdater delete(LoginFailureKey key) {
         return new LoginFailuresUpdater(Objects.requireNonNull(key), null, -1, UpdaterState.DELETED);
     }

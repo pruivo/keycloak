@@ -74,6 +74,11 @@ public abstract class BaseUpdater<K, V> implements Updater<K, V> {
     }
 
     @Override
+    public final boolean hasVersion() {
+        return state != UpdaterState.READ_WITH_NO_VERSION;
+    }
+
+    @Override
     public final void markDeleted() {
         state = UpdaterState.DELETED;
     }
@@ -120,5 +125,9 @@ public abstract class BaseUpdater<K, V> implements Updater<K, V> {
          * The cache value was read from the Infinispan cache.
          */
         READ,
+        /**
+         * The cache value was read from the Infinispan cache without metadata.
+         */
+        READ_WITH_NO_VERSION,
     }
 }
