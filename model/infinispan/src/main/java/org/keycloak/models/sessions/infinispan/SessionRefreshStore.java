@@ -23,7 +23,10 @@ import org.keycloak.models.sessions.infinispan.changes.sessions.PersisterLastSes
 public interface SessionRefreshStore {
     CrossDCLastSessionRefreshStore getLastSessionRefreshStore();
 
-    CrossDCLastSessionRefreshStore getOfflineLastSessionRefreshStore();
+    @Deprecated(forRemoval = true, since = "26")
+    default CrossDCLastSessionRefreshStore getOfflineLastSessionRefreshStore() {
+        return getLastSessionRefreshStore();
+    }
 
     PersisterLastSessionRefreshStore getPersisterLastSessionRefreshStore();
 }

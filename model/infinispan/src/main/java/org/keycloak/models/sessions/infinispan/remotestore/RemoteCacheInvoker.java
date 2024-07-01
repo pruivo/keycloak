@@ -17,9 +17,6 @@
 
 package org.keycloak.models.sessions.infinispan.remotestore;
 
-import org.infinispan.client.hotrod.exceptions.HotRodClientException;
-import org.keycloak.common.Profile;
-import org.keycloak.common.util.Retry;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -29,7 +26,11 @@ import java.util.concurrent.TimeUnit;
 import org.infinispan.client.hotrod.Flag;
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.VersionedValue;
+import org.infinispan.client.hotrod.exceptions.HotRodClientException;
 import org.jboss.logging.Logger;
+import org.keycloak.common.Profile;
+import org.keycloak.common.util.Retry;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.connections.infinispan.TopologyInfo;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -37,11 +38,8 @@ import org.keycloak.models.sessions.infinispan.changes.MergedUpdate;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.changes.SessionUpdateTask;
 import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
-import org.keycloak.connections.infinispan.InfinispanUtil;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
 
 /**
@@ -54,9 +52,8 @@ public class RemoteCacheInvoker {
     private final Map<String, RemoteCacheContext> remoteCaches =  new HashMap<>();
 
 
-    public void addRemoteCache(String cacheName, RemoteCache remoteCache, MaxIdleTimeLoader maxIdleLoader) {
-        RemoteCacheContext ctx = new RemoteCacheContext(remoteCache, maxIdleLoader);
-        remoteCaches.put(cacheName, ctx);
+    public <K, V> void addRemoteCache(String cacheName, RemoteCache<K, V> remoteCache, MaxIdleTimeLoader<K> maxIdleLoader) {
+        remoteCaches.put(cacheName, new RemoteCacheContext<>(remoteCache, maxIdleLoader));
     }
 
     public Set<String> getRemoteCacheNames() {
@@ -65,7 +62,7 @@ public class RemoteCacheInvoker {
 
 
     public <K, V extends SessionEntity> void runTask(KeycloakSession kcSession, RealmModel realm, String cacheName, K key, MergedUpdate<V> task, SessionEntityWrapper<V> sessionWrapper) {
-        RemoteCacheContext context = remoteCaches.get(cacheName);
+        RemoteCacheContext<K, SessionEntityWrapper<V>> context = remoteCaches.get(cacheName);
         if (context == null) {
             return;
         }
@@ -80,7 +77,7 @@ public class RemoteCacheInvoker {
             return;
         }
 
-        long loadedMaxIdleTimeMs = context.maxIdleTimeLoader.getMaxIdleTimeMs(realm);
+        long loadedMaxIdleTimeMs = context.maxIdleTimeLoader.getMaxIdleTimeMs(key, realm);
 
         // Increase the timeout to ensure that entry won't expire on remoteCache in case that write of some entities to remoteCache is postponed (eg. userSession.lastSessionRefresh)
         final long maxIdleTimeMs = loadedMaxIdleTimeMs + 1800000;
@@ -154,9 +151,7 @@ public class RemoteCacheInvoker {
             if (versioned == null) {
                 if (Profile.isFeatureEnabled(Profile.Feature.PERSISTENT_USER_SESSIONS) &&
                     (remoteCache.getName().equals(USER_SESSION_CACHE_NAME)
-                     || remoteCache.getName().equals(CLIENT_SESSION_CACHE_NAME)
-                     || remoteCache.getName().equals(OFFLINE_USER_SESSION_CACHE_NAME)
-                     || remoteCache.getName().equals(OFFLINE_CLIENT_SESSION_CACHE_NAME))) {
+                     || remoteCache.getName().equals(CLIENT_SESSION_CACHE_NAME))) {
                     logger.debugf("No existing entry for %s in the remote cache to remove, might have been evicted. A delete will force an eviction in the other DC.", key);
                     remoteCache.remove(key);
                 }
@@ -197,12 +192,12 @@ public class RemoteCacheInvoker {
     }
 
 
-    private static class RemoteCacheContext {
+    private static class RemoteCacheContext<K, V> {
 
-        private final RemoteCache remoteCache;
-        private final MaxIdleTimeLoader maxIdleTimeLoader;
+        private final RemoteCache<K, V> remoteCache;
+        private final MaxIdleTimeLoader<K> maxIdleTimeLoader;
 
-        public RemoteCacheContext(RemoteCache remoteCache, MaxIdleTimeLoader maxIdleLoader) {
+        public RemoteCacheContext(RemoteCache<K, V> remoteCache, MaxIdleTimeLoader<K> maxIdleLoader) {
             this.remoteCache = remoteCache;
             this.maxIdleTimeLoader = maxIdleLoader;
         }
@@ -211,9 +206,9 @@ public class RemoteCacheInvoker {
 
 
     @FunctionalInterface
-    public interface MaxIdleTimeLoader {
+    public interface MaxIdleTimeLoader<K> {
 
-        long getMaxIdleTimeMs(RealmModel realm);
+        long getMaxIdleTimeMs(K key, RealmModel realm);
 
     }
 

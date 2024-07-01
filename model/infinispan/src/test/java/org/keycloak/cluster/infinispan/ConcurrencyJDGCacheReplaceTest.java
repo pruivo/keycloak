@@ -19,6 +19,7 @@ package org.keycloak.cluster.infinispan;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -34,16 +35,16 @@ import org.infinispan.client.hotrod.event.ClientCacheEntryCreatedEvent;
 import org.infinispan.client.hotrod.event.ClientCacheEntryModifiedEvent;
 import org.infinispan.context.Flag;
 import org.infinispan.manager.EmbeddedCacheManager;
+import org.infinispan.persistence.remote.configuration.RemoteStoreConfigurationBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-import java.util.UUID;
-import org.infinispan.persistence.remote.configuration.RemoteStoreConfigurationBuilder;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
 /**
  * Test concurrency for remoteStore (backed by HotRod RemoteCaches) against external JDG. Especially tests "replaceWithVersion" contract.
@@ -75,7 +76,7 @@ public class ConcurrencyJDGCacheReplaceTest {
 
     private static final UUID CLIENT_1_UUID = UUID.randomUUID();
 
-    
+
     public static void main(String[] args) throws Exception {
         Cache<String, SessionEntityWrapper<UserSessionEntity>> cache1 = createManager(1).getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
         Cache<String, SessionEntityWrapper<UserSessionEntity>> cache2 = createManager(2).getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
@@ -91,7 +92,7 @@ public class ConcurrencyJDGCacheReplaceTest {
         session.setStarted(Time.currentTime());
         session.setLastSessionRefresh(Time.currentTime());
 
-        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(UUID.randomUUID());
+        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(KeycloakModelUtils.generateId());
         clientSession.setAuthMethod("saml");
         clientSession.setAction("something");
         clientSession.setTimestamp(1234);

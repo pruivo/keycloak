@@ -37,7 +37,7 @@ import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
-import java.util.UUID;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
 /**
  * Test concurrent writes to distributed cache with usage of atomic replace
@@ -85,7 +85,7 @@ public class DistributedCacheConcurrentWritesTest {
         session.setStarted(Time.currentTime());
         session.setLastSessionRefresh(Time.currentTime());
 
-        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(UUID.randomUUID());
+        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(KeycloakModelUtils.generateId());
         clientSession.setAuthMethod("saml");
         clientSession.setAction("something");
         clientSession.setTimestamp(1234);

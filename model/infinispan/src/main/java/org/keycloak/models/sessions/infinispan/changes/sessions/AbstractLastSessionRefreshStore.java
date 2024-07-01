@@ -44,8 +44,8 @@ public abstract class AbstractLastSessionRefreshStore {
     }
 
 
-    public void putLastSessionRefresh(KeycloakSession kcSession, String sessionId, String realmId, int lastSessionRefresh) {
-        lastSessionRefreshes.put(sessionId, new SessionData(realmId, lastSessionRefresh));
+    public void putLastSessionRefresh(KeycloakSession kcSession, String sessionId, String realmId, int lastSessionRefresh, boolean offline) {
+        lastSessionRefreshes.put(sessionId, new SessionData(realmId, lastSessionRefresh, offline));
 
         // Assume that lastSessionRefresh is same or close to current time
         checkSendingMessage(kcSession, lastSessionRefresh);

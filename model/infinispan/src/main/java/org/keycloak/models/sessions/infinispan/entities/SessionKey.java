@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Red Hat, Inc. and/or its affiliates
+ * Copyright 2024 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,19 +15,29 @@
  * limitations under the License.
  */
 
-package org.keycloak.models.sessions.infinispan.changes.sessions;
+package org.keycloak.models.sessions.infinispan.entities;
+
+import java.util.UUID;
 
 import org.infinispan.protostream.annotations.Proto;
-import org.infinispan.protostream.annotations.ProtoFactory;
-import org.infinispan.protostream.annotations.ProtoField;
 import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.marshalling.Marshalling;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
-/**
- * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
- */
-@ProtoTypeId(Marshalling.SESSION_DATA)
+@ProtoTypeId(Marshalling.SESSION_KEY)
 @Proto
-public record SessionData(String realmId, int lastSessionRefresh, boolean offline) {
+public record SessionKey(String uuid, boolean offline) {
+
+    public static SessionKey randomOnlineSessionKey() {
+        return randomSessionKey(false);
+    }
+
+    public static SessionKey randomOfflineSessionKey() {
+        return randomSessionKey(true);
+    }
+
+    public static SessionKey randomSessionKey(boolean offline) {
+        return new SessionKey(KeycloakModelUtils.generateId(), offline);
+    }
 
 }

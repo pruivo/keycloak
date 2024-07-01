@@ -121,8 +121,6 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
         setTimeOffset(1500);
         getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).processExpiration();
         getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).processExpiration();
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).processExpiration();
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).processExpiration();
         resetTimeOffset();
 
         revertInfinispanTestTimeServiceOnAllStartedAuthServers();
@@ -236,11 +234,11 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
 
     @Test
     public void testRealmRemoveOfflineSessions(
-            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
-            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
             @JmxInfinispanChannelStatistics() InfinispanStatistics channelStatisticsCrossDc) throws Exception {
 
-        createInitialSessions(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,true, cacheDc1Statistics, cacheDc2Statistics, true);
+        createInitialSessions(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,true, cacheDc1Statistics, cacheDc2Statistics, true);
 
         channelStatisticsCrossDc.reset();
 
@@ -248,7 +246,7 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
         getAdminClient().realm(REALM_NAME).remove();
 
         // Assert sessions removed on node1 and node2 and on remote caches.
-        assertStatisticsExpected("After realm remove", InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME, cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
+        assertStatisticsExpected("After realm remove", InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME, cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
                 sessions01, sessions02, clientSessions01, clientSessions02, remoteSessions01, remoteSessions02, true);
     }
 
@@ -319,11 +317,11 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
 
     @Test
     public void testPeriodicExpirationOfflineSessions(
-            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
-            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
             @JmxInfinispanChannelStatistics() InfinispanStatistics channelStatisticsCrossDc) throws Exception {
 
-        OAuthClient.AccessTokenResponse lastAccessTokenResponse = createInitialSessions(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        OAuthClient.AccessTokenResponse lastAccessTokenResponse = createInitialSessions(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 true, cacheDc1Statistics, cacheDc2Statistics, true).get(SESSIONS_COUNT - 1);
 
         // Assert I am able to refresh
@@ -334,10 +332,10 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
         channelStatisticsCrossDc.reset();
 
         // Remove expired in DC0
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).processExpiration();
+        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).processExpiration();
 
         // Nothing yet expired. It may happen that no message sent between DCs
-        assertStatisticsExpected("After remove expired - 1", InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        assertStatisticsExpected("After remove expired - 1", InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
                 sessions01 + SESSIONS_COUNT, sessions02 + SESSIONS_COUNT,  clientSessions01 + SESSIONS_COUNT, clientSessions02 + SESSIONS_COUNT,
                 remoteSessions01 + SESSIONS_COUNT, remoteSessions02 + SESSIONS_COUNT, false);
@@ -355,11 +353,11 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
         channelStatisticsCrossDc.reset();
 
         // Remove expired in DC0
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).processExpiration();
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).processExpiration();
+        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).processExpiration();
+        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).processExpiration();
 
         // Assert sessions removed on node1 and node2 and on remote caches.
-        assertStatisticsExpected("After remove expired - 2", InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        assertStatisticsExpected("After remove expired - 2", InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
                 sessions01, sessions02, clientSessions01, clientSessions02, remoteSessions01, remoteSessions02, true);
     }
@@ -391,10 +389,10 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
 
     @Test
     public void testUserRemoveOfflineSessions(
-            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
-            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
             @JmxInfinispanChannelStatistics() InfinispanStatistics channelStatisticsCrossDc) throws Exception {
-        createInitialSessions(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,true, cacheDc1Statistics, cacheDc2Statistics, true);
+        createInitialSessions(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,true, cacheDc1Statistics, cacheDc2Statistics, true);
 
 //        log.infof("Sleeping!");
 //        Thread.sleep(10000000);
@@ -406,7 +404,7 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
 
 
         // Assert sessions removed on node1 and node2 and on remote caches.
-        assertStatisticsExpected("After user remove", InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        assertStatisticsExpected("After user remove", InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
                 sessions01, sessions02, clientSessions01, clientSessions02, remoteSessions01, remoteSessions02, true);
     }
@@ -594,28 +592,28 @@ public class SessionExpirationCrossDCTest extends AbstractAdminCrossDCTest {
 
     @Test
     public void testClearDetachedOfflineClientSessions(
-            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
-            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc1Statistics,
+            @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics cacheDc2Statistics,
             @JmxInfinispanChannelStatistics() InfinispanStatistics channelStatisticsCrossDc) throws Exception {
 
         // Don't include remote stats. Size is smaller because of distributed cache
-        List<OAuthClient.AccessTokenResponse> responses = createInitialSessions(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        List<OAuthClient.AccessTokenResponse> responses = createInitialSessions(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 true, cacheDc1Statistics, cacheDc2Statistics, true);
 
         // Directly remove the userSession entity on DC0. Should be propagated to DC1 as well, but clientSessions are not yet cleared (they become detached)
         for (OAuthClient.AccessTokenResponse response : responses) {
             String userSessionId = oauth.verifyToken(response.getAccessToken()).getSessionState();
-            getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).removeKey(userSessionId);
+            getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).removeKey(userSessionId);
         }
 
         // Increase offset to 20 minutes. Client offline sessions should be expired from infinispan by that. Master sessions will still remain there.
         setTimeOffset(1210);
 
         // Trigger removeExpired
-        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).processExpiration();
+        getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).processExpiration();
 
         // Ensure clientSessions were removed
-        assertStatisticsExpected("After remove expired", InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME,
+        assertStatisticsExpected("After remove expired", InfinispanConnectionProvider.USER_SESSION_CACHE_NAME, InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
                 cacheDc1Statistics, cacheDc2Statistics, channelStatisticsCrossDc,
                 sessions01, sessions02, clientSessions01, clientSessions02,
                 remoteSessions01, remoteSessions02, true);

@@ -17,6 +17,9 @@
 
 package org.keycloak.models.sessions.infinispan.changes;
 
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.infinispan.Cache;
 import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticatedClientSessionModel;
@@ -30,22 +33,18 @@ import org.keycloak.models.sessions.infinispan.SessionFunction;
 import org.keycloak.models.sessions.infinispan.UserSessionAdapter;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionStore;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheInvoker;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
 
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-
-public class ClientSessionPersistentChangelogBasedTransaction extends PersistentSessionsChangelogBasedTransaction<UUID, AuthenticatedClientSessionEntity> {
+public class ClientSessionPersistentChangelogBasedTransaction extends PersistentSessionsChangelogBasedTransaction<SessionKey, AuthenticatedClientSessionEntity> {
 
     private static final Logger LOG = Logger.getLogger(ClientSessionPersistentChangelogBasedTransaction.class);
     private final UserSessionPersistentChangelogBasedTransaction userSessionTx;
 
     public ClientSessionPersistentChangelogBasedTransaction(KeycloakSession session,
-                                                            Cache<UUID, SessionEntityWrapper<AuthenticatedClientSessionEntity>> cache,
-                                                            Cache<UUID, SessionEntityWrapper<AuthenticatedClientSessionEntity>> offlineCache,
+                                                            Cache<SessionKey, SessionEntityWrapper<AuthenticatedClientSessionEntity>> cache,
                                                             RemoteCacheInvoker remoteCacheInvoker,
                                                             SessionFunction<AuthenticatedClientSessionEntity> lifespanMsLoader,
                                                             SessionFunction<AuthenticatedClientSessionEntity> maxIdleTimeMsLoader,
@@ -53,17 +52,17 @@ public class ClientSessionPersistentChangelogBasedTransaction extends Persistent
                                                             SessionFunction<AuthenticatedClientSessionEntity> offlineMaxIdleTimeMsLoader,
                                                             UserSessionPersistentChangelogBasedTransaction userSessionTx,
                                                             ArrayBlockingQueue<PersistentUpdate> batchingQueue,
-                                                            SerializeExecutionsByKey<UUID> serializerOnline,
-                                                            SerializeExecutionsByKey<UUID> serializerOffline) {
-        super(session, cache, offlineCache, remoteCacheInvoker, lifespanMsLoader, maxIdleTimeMsLoader, offlineLifespanMsLoader, offlineMaxIdleTimeMsLoader, batchingQueue, serializerOnline, serializerOffline);
+                                                            SerializeExecutionsByKey<SessionKey> serializerOnline) {
+        super(session, cache, remoteCacheInvoker, lifespanMsLoader, maxIdleTimeMsLoader, offlineLifespanMsLoader, offlineMaxIdleTimeMsLoader, batchingQueue, serializerOnline);
         this.userSessionTx = userSessionTx;
     }
 
-    public SessionEntityWrapper<AuthenticatedClientSessionEntity> get(RealmModel realm, ClientModel client, UserSessionModel userSession, UUID key, boolean offline) {
-        SessionUpdatesList<AuthenticatedClientSessionEntity> myUpdates = getUpdates(offline).get(key);
+    public SessionEntityWrapper<AuthenticatedClientSessionEntity> get(RealmModel realm, ClientModel client, UserSessionModel userSession, String uuid, boolean offline) {
+        var key = new SessionKey(uuid, offline);
+        SessionUpdatesList<AuthenticatedClientSessionEntity> myUpdates = updates.get(key);
         if (myUpdates == null) {
-            SessionEntityWrapper<AuthenticatedClientSessionEntity> wrappedEntity = null;
-            wrappedEntity = getCache(offline).get(key);
+            SessionEntityWrapper<AuthenticatedClientSessionEntity> wrappedEntity;
+            wrappedEntity = cache.get(key);
 
             if (wrappedEntity == null) {
                 LOG.debugf("client-session not found in cache for sessionId=%s, offline=%s, loading from persister", key, offline);
@@ -87,17 +86,14 @@ public class ClientSessionPersistentChangelogBasedTransaction extends Persistent
             }
 
             myUpdates = new SessionUpdatesList<>(realm, wrappedEntity);
-            getUpdates(offline).put(key, myUpdates);
+            updates.put(key, myUpdates);
 
             return wrappedEntity;
         } else {
 
             // If entity is scheduled for remove, we don't return it.
-            boolean scheduledForRemove = myUpdates.getUpdateTasks().stream().filter((SessionUpdateTask task) -> {
-
-                return task.getOperation() == SessionUpdateTask.CacheOperation.REMOVE;
-
-            }).findFirst().isPresent();
+            boolean scheduledForRemove = myUpdates.getUpdateTasks().stream()
+                    .anyMatch((SessionUpdateTask<?> task) -> task.getOperation() == SessionUpdateTask.CacheOperation.REMOVE);
 
             return scheduledForRemove ? null : myUpdates.getEntityWrapper();
         }
@@ -122,7 +118,7 @@ public class ClientSessionPersistentChangelogBasedTransaction extends Persistent
 
     private AuthenticatedClientSessionEntity createAuthenticatedClientSessionInstance(String userSessionId, AuthenticatedClientSessionModel clientSession,
                                                                                       String realmId, String clientId) {
-        UUID clientSessionId = PersistentUserSessionProvider.createClientSessionUUID(userSessionId, clientId);
+        String clientSessionId = PersistentUserSessionProvider.createClientSessionUUID(userSessionId, clientId);
 
         AuthenticatedClientSessionEntity entity = new AuthenticatedClientSessionEntity(clientSessionId);
         entity.setRealmId(realmId);
@@ -154,21 +150,20 @@ public class ClientSessionPersistentChangelogBasedTransaction extends Persistent
             return null;
         }
 
-        final UUID clientSessionId = entity.getId();
+        var key = new SessionKey(entity.getId(), offline);
 
         SessionUpdateTask<AuthenticatedClientSessionEntity> createClientSessionTask = Tasks.addIfAbsentSync();
-        this.addTask(entity.getId(), createClientSessionTask, entity, UserSessionModel.SessionPersistenceState.PERSISTENT);
+        this.addTask(key, createClientSessionTask, entity, UserSessionModel.SessionPersistenceState.PERSISTENT);
 
-        if (! (userSession instanceof UserSessionAdapter)) {
+        if (! (userSession instanceof UserSessionAdapter<?> sessionToImportInto)) {
             throw new IllegalStateException("UserSessionModel must be instance of UserSessionAdapter");
         }
 
-        UserSessionAdapter sessionToImportInto = (UserSessionAdapter) userSession;
         AuthenticatedClientSessionStore clientSessions = sessionToImportInto.getEntity().getAuthenticatedClientSessions();
-        clientSessions.put(client.getId(), clientSessionId);
+        clientSessions.put(client.getId(), key.uuid());
 
-        SessionUpdateTask registerClientSessionTask = new RegisterClientSessionTask(client.getId(), clientSessionId, offline);
-        userSessionTx.addTask(sessionToImportInto.getId(), registerClientSessionTask);
+        SessionUpdateTask<UserSessionEntity> registerClientSessionTask = new RegisterClientSessionTask(client.getId(), key.uuid(), offline);
+        userSessionTx.addTask(new SessionKey(sessionToImportInto.getId(), offline), registerClientSessionTask);
 
         return new SessionEntityWrapper<>(entity);
     }
@@ -176,10 +171,10 @@ public class ClientSessionPersistentChangelogBasedTransaction extends Persistent
     public static class RegisterClientSessionTask implements PersistentSessionUpdateTask<UserSessionEntity> {
 
         private final String clientUuid;
-        private final UUID clientSessionId;
+        private final String clientSessionId;
         private final boolean offline;
 
-        public RegisterClientSessionTask(String clientUuid, UUID clientSessionId, boolean offline) {
+        public RegisterClientSessionTask(String clientUuid, String clientSessionId, boolean offline) {
             this.clientUuid = clientUuid;
             this.clientSessionId = clientSessionId;
             this.offline = offline;

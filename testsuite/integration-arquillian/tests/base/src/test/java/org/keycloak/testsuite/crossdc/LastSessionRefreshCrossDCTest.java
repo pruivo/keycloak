@@ -252,10 +252,10 @@ public class LastSessionRefreshCrossDCTest extends AbstractAdminCrossDCTest {
 
 
     @Test
-    public void testOfflineSessionsLastSessionRefreshUpdate(@JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics sessionCacheDc1Stats,
-                                             @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME) InfinispanStatistics sessionCacheDc2Stats,
-                                             @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME) InfinispanStatistics clientSessionCacheDc1Stats,
-                                             @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME) InfinispanStatistics clientSessionCacheDc2Stats
+    public void testOfflineSessionsLastSessionRefreshUpdate(@JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics sessionCacheDc1Stats,
+                                             @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.USER_SESSION_CACHE_NAME) InfinispanStatistics sessionCacheDc2Stats,
+                                             @JmxInfinispanCacheStatistics(dc=DC.FIRST, managementPortProperty = "cache.server.management.port", cacheName=InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME) InfinispanStatistics clientSessionCacheDc1Stats,
+                                             @JmxInfinispanCacheStatistics(dc=DC.SECOND, managementPortProperty = "cache.server.2.management.port", cacheName=InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME) InfinispanStatistics clientSessionCacheDc2Stats
 
     ) throws Exception {
 

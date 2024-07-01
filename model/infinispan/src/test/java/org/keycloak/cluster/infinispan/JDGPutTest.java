@@ -20,7 +20,6 @@ package org.keycloak.cluster.infinispan;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 import org.infinispan.Cache;
 import org.infinispan.client.hotrod.RemoteCache;
@@ -29,10 +28,11 @@ import org.infinispan.manager.EmbeddedCacheManager;
 import org.infinispan.persistence.remote.configuration.RemoteStoreConfigurationBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheSessionsLoaderContext;
-import org.keycloak.connections.infinispan.InfinispanUtil;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -51,10 +51,9 @@ public class JDGPutTest {
 
             //remoteCache1.put("key1", new Book("book1", "desc", 1));
             //remoteCache2.put("key2", );
-            String uuidStr = UUID.randomUUID().toString();
+            String uuidStr = KeycloakModelUtils.generateId();
             System.out.println(uuidStr);
-            UUID uuid = UUID.fromString(uuidStr);
-            AuthenticatedClientSessionEntity ace = new AuthenticatedClientSessionEntity(uuid);
+            AuthenticatedClientSessionEntity ace = new AuthenticatedClientSessionEntity(uuidStr);
             SessionEntityWrapper wrapper = new SessionEntityWrapper(ace);
 
             cache1.put("key1", wrapper);

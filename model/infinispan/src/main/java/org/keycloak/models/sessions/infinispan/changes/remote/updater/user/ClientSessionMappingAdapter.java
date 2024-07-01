@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -33,6 +32,7 @@ import org.infinispan.commons.util.concurrent.CompletionStages;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionStore;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 
 /**
@@ -54,32 +54,35 @@ public class ClientSessionMappingAdapter extends AbstractMap<String, Authenticat
     private static final Consumer<AuthenticatedClientSessionStore> CLEAR = AuthenticatedClientSessionStore::clear;
 
     private final AuthenticatedClientSessionStore mappings;
+    private final boolean offline;
     private final ClientSessionProvider clientSessionProvider;
     private final List<Consumer<AuthenticatedClientSessionStore>> changes;
 
-    public ClientSessionMappingAdapter(AuthenticatedClientSessionStore mappings, ClientSessionProvider clientSessionProvider) {
+    public ClientSessionMappingAdapter(AuthenticatedClientSessionStore mappings, ClientSessionProvider clientSessionProvider, boolean offline) {
         this.mappings = Objects.requireNonNull(mappings);
+        this.offline = offline;
         this.clientSessionProvider = Objects.requireNonNull(clientSessionProvider);
         changes = new CopyOnWriteArrayList<>();
     }
 
     @Override
     public void clear() {
-        mappings.forEach((id, uuid) -> clientSessionProvider.removeClientSession(uuid));
+        mappings.forEach((id, uuid) -> clientSessionProvider.removeClientSession(cacheKey(uuid)));
         changes.clear();
         addChangeAndApply(CLEAR);
     }
 
     @Override
     public AuthenticatedClientSessionModel put(String key, AuthenticatedClientSessionModel value) {
-        addChangeAndApply(store -> store.put(key, UUID.fromString(value.getId())));
-        return clientSessionProvider.getClientSession(key, mappings.get(key));
+        var clientSessionKey = cacheKey(value.getId());
+        addChangeAndApply(store -> store.put(key, clientSessionKey.uuid()));
+        return clientSessionProvider.getClientSession(key, clientSessionKey);
     }
 
     @Override
     public AuthenticatedClientSessionModel remove(Object key) {
         var clientId = String.valueOf(key);
-        var uuid = mappings.get(clientId);
+        var uuid = getMappings(clientId);
         var existing = clientSessionProvider.getClientSession(clientId, uuid);
         onClientRemoved(clientId, uuid);
         return existing;
@@ -88,7 +91,7 @@ public class ClientSessionMappingAdapter extends AbstractMap<String, Authenticat
     @Override
     public AuthenticatedClientSessionModel get(Object key) {
         var clientId = String.valueOf(key);
-        return clientSessionProvider.getClientSession(clientId, mappings.get(clientId));
+        return clientSessionProvider.getClientSession(clientId, getMappings(clientId));
     }
 
     @SuppressWarnings("NullableProblems")
@@ -96,10 +99,10 @@ public class ClientSessionMappingAdapter extends AbstractMap<String, Authenticat
     public Set<Entry<String, AuthenticatedClientSessionModel>> entrySet() {
         Map<String, AuthenticatedClientSessionModel> results = new ConcurrentHashMap<>(mappings.size());
         var stage = CompletionStages.aggregateCompletionStage();
-        mappings.forEach((clientId, uuid) -> stage.dependsOn(clientSessionProvider.getClientSessionAsync(clientId, uuid)
+        mappings.forEach((clientId, uuid) -> stage.dependsOn(clientSessionProvider.getClientSessionAsync(clientId, cacheKey(uuid))
                 .thenAccept(updater -> {
                     if (updater == null) {
-                        onClientRemoved(clientId, uuid);
+                        onClientRemoved(clientId, cacheKey(uuid));
                         return;
                     }
                     results.put(clientId, updater);
@@ -134,11 +137,19 @@ public class ClientSessionMappingAdapter extends AbstractMap<String, Authenticat
     }
 
     private void onClientRemoved(String clientId) {
-        onClientRemoved(clientId, mappings.get(clientId));
+        onClientRemoved(clientId, getMappings(clientId));
     }
 
-    private void onClientRemoved(String clientId, UUID key) {
+    private void onClientRemoved(String clientId, SessionKey key) {
         addChangeAndApply(store -> store.remove(clientId));
         clientSessionProvider.removeClientSession(key);
+    }
+
+    private SessionKey getMappings(String clientId) {
+        return cacheKey(mappings.get(clientId));
+    }
+
+    private SessionKey cacheKey(String clientUUID) {
+        return clientUUID == null ? null : new SessionKey(clientUUID, offline);
     }
 }

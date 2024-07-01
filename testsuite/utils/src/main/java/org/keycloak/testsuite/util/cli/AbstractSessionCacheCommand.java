@@ -44,9 +44,7 @@ public abstract class AbstractSessionCacheCommand extends AbstractCommand {
 
     private static final Set<String> SUPPORTED_CACHE_NAMES = new TreeSet<>(Arrays.asList(
       InfinispanConnectionProvider.USER_SESSION_CACHE_NAME,
-      InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME,
-      InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME,
-      InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME
+      InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME
     ));
 
     @Override

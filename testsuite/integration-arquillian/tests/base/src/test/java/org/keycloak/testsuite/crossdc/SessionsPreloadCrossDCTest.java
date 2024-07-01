@@ -95,13 +95,13 @@ public class SessionsPreloadCrossDCTest extends AbstractAdminCrossDCTest {
 
     @Test
     public void offlineSessionsPreloadTest() throws Exception {
-        int offlineSessionsBefore = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).size();
+        int offlineSessionsBefore = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).size();
         log.infof("offlineSessionsBefore: %d", offlineSessionsBefore);
 
         // Create initial sessions
         List<OAuthClient.AccessTokenResponse> tokenResponses = createInitialSessions(true);
 
-        int offlineSessions01 = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).size();
+        int offlineSessions01 = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).size();
         Assert.assertEquals(offlineSessions01, offlineSessionsBefore + SESSIONS_COUNT);
         log.infof("offlineSessions01: %d", offlineSessions01);
 
@@ -120,8 +120,8 @@ public class SessionsPreloadCrossDCTest extends AbstractAdminCrossDCTest {
         enableLoadBalancerNode(DC.SECOND, 0);
 
         // Ensure sessions are loaded in both 1st DC and 2nd DC
-        Set<String> offlineSessions11keys = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).enumerateKeys();
-        Set<String> offlineSessions12keys = getTestingClientForStartedNodeInDc(1).testing().cache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).enumerateKeys();
+        Set<String> offlineSessions11keys = getTestingClientForStartedNodeInDc(0).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).enumerateKeys();
+        Set<String> offlineSessions12keys = getTestingClientForStartedNodeInDc(1).testing().cache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).enumerateKeys();
         log.infof("offlineSessions11keys: %s, offlineSessions12keys: %s", offlineSessions11keys, offlineSessions12keys);
         assertThat(offlineSessions11keys, Matchers.equalTo(offlineSessions12keys));
 

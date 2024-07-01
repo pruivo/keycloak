@@ -41,6 +41,7 @@ import org.keycloak.models.UserProvider;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserSessionProvider;
 import org.keycloak.models.session.UserSessionPersisterProvider;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.testsuite.model.HotRodServerRule;
 import org.keycloak.testsuite.model.KeycloakModelTest;
 import org.keycloak.testsuite.model.RequireProvider;
@@ -175,15 +176,16 @@ public class UserSessionInitializerTest extends KeycloakModelTest {
                 } else {
                     // try to get the user session at other nodes and also at different sites
                     inComittedTransaction(session -> {
+                        var key = new SessionKey(userSessionId.get(), false);
                         InfinispanConnectionProvider provider = session.getProvider(InfinispanConnectionProvider.class);
                         if (InfinispanUtils.isEmbeddedInfinispan()) {
-                            Cache<String, Object> localSessions = provider.getCache(USER_SESSION_CACHE_NAME);
-                            containsSession.get().add(localSessions.containsKey(userSessionId.get()));
+                            Cache<SessionKey, Object> localSessions = provider.getCache(USER_SESSION_CACHE_NAME);
+                            containsSession.get().add(localSessions.containsKey(key));
                         }
 
                         if (hotRodServer.isPresent()) {
-                            RemoteCache<String, Object> remoteSessions = provider.getRemoteCache(USER_SESSION_CACHE_NAME);
-                            containsSession.get().add(remoteSessions.containsKey(userSessionId.get()));
+                            RemoteCache<SessionKey, Object> remoteSessions = provider.getRemoteCache(USER_SESSION_CACHE_NAME);
+                            containsSession.get().add(remoteSessions.containsKey(key));
                         }
                     });
                 }

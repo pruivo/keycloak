@@ -29,6 +29,7 @@ import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshStore;
 import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshStoreFactory;
 import org.keycloak.models.sessions.infinispan.changes.sessions.SessionData;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.AbstractKeycloakTest;
@@ -78,25 +79,25 @@ public class LastSessionRefreshUnitTest extends AbstractKeycloakTest {
 
             // Add 8 items. No message
             for (int i=0 ; i<8 ; i++){
-                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh);
+                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh, true);
             }
             Assert.assertEquals(0, counter.get());
 
             // Add 2 other items. Message sent now due the maxCount is 10
             for (int i=8 ; i<10 ; i++){
-                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh);
+                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh, true);
             }
             Assert.assertEquals(1, counter.get());
 
             // Add 5 items. No additional message
             for (int i=10 ; i<15 ; i++){
-                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh);
+                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh, true);
             }
             Assert.assertEquals(1, counter.get());
 
             // Add 20 items. 2 additional messages
             for (int i=15 ; i<35 ; i++){
-                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh);
+                customStore.putLastSessionRefresh(session, "session-" + i, "master", lastSessionRefresh, true);
             }
             Assert.assertEquals(3, counter.get());
 
@@ -172,7 +173,7 @@ public class LastSessionRefreshUnitTest extends AbstractKeycloakTest {
 
             };
 
-            Cache<String, SessionEntityWrapper<UserSessionEntity>> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
+            Cache<SessionKey, SessionEntityWrapper<UserSessionEntity>> cache = session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
             return factory.createAndInit(session, cache, timerIntervalMs, maxIntervalBetweenMessagesSeconds, 10, false);
         }
 

@@ -17,64 +17,37 @@
 
 package org.keycloak.models.sessions.infinispan.stream;
 
-import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
-import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
-import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
-import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
-
-import java.io.Serializable;
-import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.stream.Stream;
+
+import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
+import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
+import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
-public class Mappers {
+public final class Mappers {
 
-    public static Function<Map.Entry<String, SessionEntityWrapper<UserSessionEntity>>, UserSessionEntity> userSessionEntity() {
-        return new UserSessionEntityMapper();
+    private Mappers() {
+    }
+
+    private static final Function<Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>>, UserSessionEntity> USER_SESSION_ENTITY_FUNCTION = entry -> entry.getValue().getEntity();
+    private static final Function<Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>>, LoginFailureKey> LOGIN_FAILURE_KEY_FUNCTION = Map.Entry::getKey;
+    private static final Function<Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>>, Set<String>> CLIENT_SESSIONS_FUNCTION = entry -> entry.getValue().getEntity().getAuthenticatedClientSessions().keySet();
+
+    public static Function<Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>>, UserSessionEntity> userSessionEntity() {
+        return USER_SESSION_ENTITY_FUNCTION;
     }
 
     public static Function<Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>>, LoginFailureKey> loginFailureId() {
-        return new LoginFailureIdMapper();
+        return LOGIN_FAILURE_KEY_FUNCTION;
     }
 
-
-    private static class UserSessionEntityMapper implements Function<Map.Entry<String, SessionEntityWrapper<UserSessionEntity>>, UserSessionEntity>, Serializable {
-
-        @Override
-        public UserSessionEntity apply(Map.Entry<String, SessionEntityWrapper<UserSessionEntity>> entry) {
-            return entry.getValue().getEntity();
-        }
-
+    public static Function<Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>>, Set<String>> authClientSessionSetMapper() {
+        return CLIENT_SESSIONS_FUNCTION;
     }
-
-    private static class LoginFailureIdMapper implements Function<Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>>, LoginFailureKey> {
-        @Override
-        public LoginFailureKey apply(Map.Entry<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> entry) {
-            return entry.getKey();
-        }
-    }
-
-    private static class AuthClientSessionSetMapper implements Function<Map.Entry<String, SessionEntityWrapper<UserSessionEntity>>, Set<String>> {
-
-        @Override
-        public Set<String> apply(Map.Entry<String, SessionEntityWrapper<UserSessionEntity>> entry) {
-            UserSessionEntity entity = entry.getValue().getEntity();
-            return entity.getAuthenticatedClientSessions().keySet();
-        }
-    }
-
-    public static <T> Stream<T> toStream(Collection<T> collection) {
-        return collection.stream();
-    }
-
-    public static Function<Map.Entry<String, SessionEntityWrapper<UserSessionEntity>>, Set<String>> authClientSessionSetMapper() {
-        return new AuthClientSessionSetMapper();
-    }
-
-
 }

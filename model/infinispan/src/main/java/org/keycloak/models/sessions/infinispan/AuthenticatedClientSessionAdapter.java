@@ -28,15 +28,13 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.session.UserSessionPersisterProvider;
-import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.changes.ClientSessionUpdateTask;
-import org.keycloak.models.sessions.infinispan.changes.SessionUpdateTask;
+import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.changes.SessionsChangelogBasedTransaction;
 import org.keycloak.models.sessions.infinispan.changes.Tasks;
 import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshChecker;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
-
-import java.util.UUID;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -45,15 +43,15 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
     private final KeycloakSession kcSession;
     private final SessionRefreshStore provider;
-    private AuthenticatedClientSessionEntity entity;
+    private final AuthenticatedClientSessionEntity entity;
     private final ClientModel client;
-    private final SessionsChangelogBasedTransaction<UUID, AuthenticatedClientSessionEntity> clientSessionUpdateTx;
+    private final SessionsChangelogBasedTransaction<SessionKey, AuthenticatedClientSessionEntity> clientSessionUpdateTx;
     private UserSessionModel userSession;
-    private boolean offline;
+    private final SessionKey cacheKey;
 
     public AuthenticatedClientSessionAdapter(KeycloakSession kcSession, SessionRefreshStore provider,
                                              AuthenticatedClientSessionEntity entity, ClientModel client, UserSessionModel userSession,
-                                             SessionsChangelogBasedTransaction<UUID, AuthenticatedClientSessionEntity> clientSessionUpdateTx, boolean offline) {
+                                             SessionsChangelogBasedTransaction<SessionKey, AuthenticatedClientSessionEntity> clientSessionUpdateTx, boolean offline) {
         if (userSession == null) {
             throw new NullPointerException("userSession must not be null");
         }
@@ -64,11 +62,11 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
         this.userSession = userSession;
         this.client = client;
         this.clientSessionUpdateTx = clientSessionUpdateTx;
-        this.offline = offline;
+        this.cacheKey = new SessionKey(entity.getId(), offline);
     }
 
     private void update(ClientSessionUpdateTask task) {
-        clientSessionUpdateTx.addTask(entity.getId(), task);
+        clientSessionUpdateTx.addTask(cacheKey, task);
     }
 
     /**
@@ -85,10 +83,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
         // Intentionally do not remove the clientUUID from the user session, invalid session is handled
         // as nonexistent in org.keycloak.models.sessions.infinispan.UserSessionAdapter.getAuthenticatedClientSessions()
         this.userSession = null;
-
-        SessionUpdateTask<AuthenticatedClientSessionEntity> removeTask = Tasks.removeSync(offline);
-
-        clientSessionUpdateTx.addTask(entity.getId(), removeTask);
+        clientSessionUpdateTx.addTask(cacheKey, Tasks.removeSync(cacheKey.offline()));
     }
 
     @Override
@@ -112,7 +107,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
         };
 
@@ -121,7 +116,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
     @Override
     public String getId() {
-        return entity.getId().toString();
+        return entity.getId();
     }
 
     @Override
@@ -157,13 +152,13 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public CrossDCMessageStatus getCrossDCMessageStatus(SessionEntityWrapper<AuthenticatedClientSessionEntity> sessionWrapper) {
-                return new CrossDCLastSessionRefreshChecker(provider.getLastSessionRefreshStore(), provider.getOfflineLastSessionRefreshStore())
-                        .shouldSaveClientSessionToRemoteCache(kcSession, client.getRealm(), sessionWrapper, userSession, offline, timestamp);
+                return new CrossDCLastSessionRefreshChecker(provider.getLastSessionRefreshStore())
+                        .shouldSaveClientSessionToRemoteCache(kcSession, client.getRealm(), sessionWrapper, userSession, cacheKey.offline(), timestamp);
             }
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
 
             @Override
@@ -192,7 +187,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
 
         };
@@ -216,7 +211,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
 
         };
@@ -240,7 +235,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
         };
 
@@ -258,7 +253,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
 
         };
@@ -269,9 +264,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
     @Override
     public Map<String, String> getNotes() {
         if (entity.getNotes().isEmpty()) return Collections.emptyMap();
-        Map<String, String> copy = new HashMap<>();
-        copy.putAll(entity.getNotes());
-        return copy;
+        return new HashMap<>(entity.getNotes());
     }
 
     @Override
@@ -295,7 +288,7 @@ public class AuthenticatedClientSessionAdapter implements AuthenticatedClientSes
 
             @Override
             public boolean isOffline() {
-                return offline;
+                return cacheKey.offline();
             }
         };
 

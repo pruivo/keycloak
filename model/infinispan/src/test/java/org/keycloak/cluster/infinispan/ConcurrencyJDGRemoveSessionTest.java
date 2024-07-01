@@ -19,6 +19,7 @@ package org.keycloak.cluster.infinispan;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -39,11 +40,11 @@ import org.jboss.logging.Logger;
 import org.junit.Assert;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-import java.util.UUID;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
 /**
  * Check that removing of session from remoteCache is session immediately removed on remoteCache in other DC. This is true.
@@ -198,7 +199,7 @@ public class ConcurrencyJDGRemoveSessionTest {
         session.setStarted(Time.currentTime());
         session.setLastSessionRefresh(Time.currentTime());
 
-        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(UUID.randomUUID());
+        AuthenticatedClientSessionEntity clientSession = new AuthenticatedClientSessionEntity(KeycloakModelUtils.generateId());
         clientSession.setAuthMethod("saml");
         clientSession.setAction("something");
         clientSession.setTimestamp(1234);

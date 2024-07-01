@@ -254,6 +254,7 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
     }
 
     protected void testUserClientIdleTimeoutSmallerThanSession(int refreshTimes, boolean offline, boolean overrideInClient) {
+        log.warn(" ---- ");
         configureTimeouts(7200, 3000, overrideInClient, false, 2000);
 
         try {
@@ -265,7 +266,8 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
                 return new String[]{userSession.getId(), clientSession.getId()};
             });
 
-            allowXSiteReplication(offline);
+            log.warn(" ==== ");
+            allowXSiteReplication();
 
             int offset = 0;
             for (int i = 0; i < refreshTimes; i++) {
@@ -325,7 +327,8 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
                 Assert.assertNull(getUserSession(session, realm, sessions[0], offline));
                 return null;
             });
-            processExpiration(offline);
+            log.warn(" <<<< ");
+            processExpiration();
         } finally {
             setTimeOffset(0);
         }
@@ -394,29 +397,26 @@ public class SessionTimeoutsTest extends KeycloakModelTest {
     /**
      * This method introduces a delay to allow replication of clientSession cache on site 1 and site 2.
      * Without the delay these test fails from time to time. This has no effect when tests run without cross-dc
-     * @param offline boolean Indicates where we work with offline sessions
      */
-    private void allowXSiteReplication(boolean offline) {
+    private void allowXSiteReplication() {
         var hotRodServer = getParameters(HotRodServerRule.class).findFirst();
         if (hotRodServer.isEmpty()) {
             return;
         }
 
-        var cacheName = offline ? InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME : InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-        var cache1 = hotRodServer.get().getHotRodCacheManager().getCache(cacheName);
-        var cache2 = hotRodServer.get().getHotRodCacheManager2().getCache(cacheName);
+        var cache1 = hotRodServer.get().getHotRodCacheManager().getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME);
+        var cache2 = hotRodServer.get().getHotRodCacheManager2().getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME);
         eventually(() -> "Wrong cache size. Site1: " + cache1.keySet() + ", Site2: " + cache2.keySet(),
                 () -> cache1.size() == cache2.size(), 10000, 10, TimeUnit.MILLISECONDS);
     }
 
-    private void processExpiration(boolean offline) {
+    private void processExpiration() {
         var hotRodServer = getParameters(HotRodServerRule.class).findFirst();
         if (hotRodServer.isEmpty()) {
             return;
         }
         // force expired entries to be removed from memory
-        var cacheName = offline ? InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME : InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-        hotRodServer.get().getHotRodCacheManager().getCache(cacheName).getAdvancedCache().getExpirationManager().processExpiration();
-        hotRodServer.get().getHotRodCacheManager2().getCache(cacheName).getAdvancedCache().getExpirationManager().processExpiration();
+        hotRodServer.get().getHotRodCacheManager().getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).getAdvancedCache().getExpirationManager().processExpiration();
+        hotRodServer.get().getHotRodCacheManager2().getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).getAdvancedCache().getExpirationManager().processExpiration();
     }
 }

@@ -29,6 +29,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.utils.KeycloakModelUtils;
@@ -42,17 +43,13 @@ public class CrossDCLastSessionRefreshListener implements ClusterListener {
 
     public static final String IGNORE_REMOTE_CACHE_UPDATE = "IGNORE_REMOTE_CACHE_UPDATE";
 
-    private final boolean offline;
-
     private final KeycloakSessionFactory sessionFactory;
-    private final Cache<String, SessionEntityWrapper<UserSessionEntity>> cache;
+    private final Cache<SessionKey, SessionEntityWrapper<UserSessionEntity>> cache;
     private final TopologyInfo topologyInfo;
 
-    public CrossDCLastSessionRefreshListener(KeycloakSession session, Cache<String, SessionEntityWrapper<UserSessionEntity>> cache, boolean offline) {
+    public CrossDCLastSessionRefreshListener(KeycloakSession session, Cache<SessionKey, SessionEntityWrapper<UserSessionEntity>> cache) {
         this.sessionFactory = session.getKeycloakSessionFactory();
         this.cache = cache;
-        this.offline = offline;
-
         this.topologyInfo = InfinispanUtil.getTopologyInfo(session);
     }
 
@@ -61,18 +58,17 @@ public class CrossDCLastSessionRefreshListener implements ClusterListener {
         Map<String, SessionData> lastSessionRefreshes = ((LastSessionRefreshEvent) event).getLastSessionRefreshes();
 
         if (logger.isDebugEnabled()) {
-            logger.debugf("Received refreshes. Offline %b, refreshes: %s", offline, lastSessionRefreshes);
+            logger.debugf("Received refreshes: %s", lastSessionRefreshes);
         }
 
-        lastSessionRefreshes.entrySet().stream().forEach((entry) -> {
-            String sessionId = entry.getKey();
-            String realmId = entry.getValue().realmId();
-            int lastSessionRefresh = entry.getValue().lastSessionRefresh();
+        lastSessionRefreshes.forEach((sessionId, value) -> {
+            String realmId = value.realmId();
+            int lastSessionRefresh = value.lastSessionRefresh();
 
             // All nodes will receive the message. So ensure that each node updates just lastSessionRefreshes owned by him.
-            if (shouldUpdateLocalCache(sessionId)) {
+            if (shouldUpdateLocalCache(sessionId, value.offline())) {
                 KeycloakModelUtils.runJobInTransaction(sessionFactory, (kcSession) -> {
-
+                    var offline = value.offline();
                     RealmModel realm = kcSession.realms().getRealm(realmId);
                     UserSessionModel userSession = offline ? kcSession.sessions().getOfflineUserSession(realm, sessionId) : kcSession.sessions().getUserSession(realm, sessionId);
                     if (userSession == null) {
@@ -95,7 +91,7 @@ public class CrossDCLastSessionRefreshListener implements ClusterListener {
 
 
     // For distributed caches, ensure that local modification is executed just on owner
-    protected boolean shouldUpdateLocalCache(String key) {
-        return topologyInfo.amIOwner(cache, key);
+    protected boolean shouldUpdateLocalCache(String uuid, boolean offline) {
+        return topologyInfo.amIOwner(cache, new SessionKey(uuid, offline));
     }
 }

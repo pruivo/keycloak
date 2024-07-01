@@ -1,13 +1,13 @@
 /*
  * Copyright 2017 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
- * 
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,16 +16,15 @@
  */
 package org.keycloak.models.sessions.infinispan.entities;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.BiConsumer;
+
 import org.infinispan.protostream.annotations.ProtoFactory;
 import org.infinispan.protostream.annotations.ProtoField;
 import org.infinispan.protostream.annotations.ProtoTypeId;
 import org.keycloak.marshalling.Marshalling;
-
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.function.BiConsumer;
 
 /**
  *
@@ -37,14 +36,14 @@ public class AuthenticatedClientSessionStore {
     /**
      * Maps client UUID to client session ID.
      */
-    private final ConcurrentMap<String, UUID> authenticatedClientSessionIds;
+    private final ConcurrentMap<String, String> authenticatedClientSessionIds;
 
     public AuthenticatedClientSessionStore() {
         authenticatedClientSessionIds = new ConcurrentHashMap<>();
     }
 
     @ProtoFactory
-    AuthenticatedClientSessionStore(ConcurrentMap<String, UUID> authenticatedClientSessionIds) {
+    AuthenticatedClientSessionStore(ConcurrentMap<String, String> authenticatedClientSessionIds) {
         this.authenticatedClientSessionIds = authenticatedClientSessionIds;
     }
 
@@ -56,11 +55,11 @@ public class AuthenticatedClientSessionStore {
         return authenticatedClientSessionIds.containsKey(key);
     }
 
-    public void forEach(BiConsumer<? super String, ? super UUID> action) {
+    public void forEach(BiConsumer<? super String, ? super String> action) {
         authenticatedClientSessionIds.forEach(action);
     }
 
-    public UUID get(String key) {
+    public String get(String key) {
         return authenticatedClientSessionIds.get(key);
     }
 
@@ -68,11 +67,11 @@ public class AuthenticatedClientSessionStore {
         return authenticatedClientSessionIds.keySet();
     }
 
-    public UUID put(String key, UUID value) {
+    public String put(String key, String value) {
         return authenticatedClientSessionIds.put(key, value);
     }
 
-    public UUID remove(String clientUUID) {
+    public String remove(String clientUUID) {
         return authenticatedClientSessionIds.remove(clientUUID);
     }
 
@@ -81,7 +80,7 @@ public class AuthenticatedClientSessionStore {
     }
 
     @ProtoField(value = 1, mapImplementation = ConcurrentHashMap.class)
-    ConcurrentMap<String, UUID> getAuthenticatedClientSessionIds() {
+    ConcurrentMap<String, String> getAuthenticatedClientSessionIds() {
         return authenticatedClientSessionIds;
     }
 

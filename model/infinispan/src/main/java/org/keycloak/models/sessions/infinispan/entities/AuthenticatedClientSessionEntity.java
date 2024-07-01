@@ -19,7 +19,6 @@ package org.keycloak.models.sessions.infinispan.entities;
 
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.infinispan.protostream.annotations.ProtoFactory;
@@ -54,11 +53,11 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
 
     private Map<String, String> notes = new ConcurrentHashMap<>();
 
-    private final UUID id;
+    private final String id;
 
     private transient String userSessionId;
 
-    public AuthenticatedClientSessionEntity(UUID id) {
+    public AuthenticatedClientSessionEntity(String id) {
         this.id = id;
     }
 
@@ -130,7 +129,7 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
     }
 
     @ProtoField(7)
-    public UUID getId() {
+    public String getId() {
         return id;
     }
 
@@ -153,7 +152,7 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
 
     // factory method required because of final fields
     @ProtoFactory
-    AuthenticatedClientSessionEntity(String realmId, String authMethod, String redirectUri, int timestamp, String action, Map<String, String> notes, UUID id) {
+    AuthenticatedClientSessionEntity(String realmId, String authMethod, String redirectUri, int timestamp, String action, Map<String, String> notes, String id) {
         super(realmId);
         this.authMethod = authMethod;
         this.redirectUri = Marshalling.emptyStringToNull(redirectUri);
@@ -201,7 +200,7 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
         this.userSessionId = userSessionId;
     }
 
-    public static AuthenticatedClientSessionEntity create(UUID clientSessionId, RealmModel realm, ClientModel client, UserSessionModel userSession) {
+    public static AuthenticatedClientSessionEntity create(String clientSessionId, RealmModel realm, ClientModel client, UserSessionModel userSession) {
         var entity = new AuthenticatedClientSessionEntity(clientSessionId);
         entity.setRealmId(realm.getId());
         entity.setClientId(client.getId());
@@ -215,7 +214,7 @@ public class AuthenticatedClientSessionEntity extends SessionEntity {
     }
 
     public static AuthenticatedClientSessionEntity createFromModel(AuthenticatedClientSessionModel model) {
-        var entity =  create(UUID.fromString(model.getId()), model.getRealm(), model.getClient(), model.getUserSession());
+        var entity = create(model.getId(), model.getRealm(), model.getClient(), model.getUserSession());
         entity.setNotes(model.getNotes() == null ? new ConcurrentHashMap<>() : model.getNotes());
         return entity;
     }

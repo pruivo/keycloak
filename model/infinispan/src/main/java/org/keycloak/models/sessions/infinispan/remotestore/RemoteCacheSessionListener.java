@@ -62,8 +62,7 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
     private RemoteCache<K, SessionEntityWrapper<V>> remoteCache;
     private TopologyInfo topologyInfo;
     private ClientListenerExecutorDecorator<K> executor;
-    private SessionFunction<V> lifespanMsLoader;
-    private SessionFunction<V> maxIdleTimeMsLoader;
+    private Expiration<K, V> expiration;
     private KeycloakSessionFactory sessionFactory;
 
 
@@ -72,14 +71,12 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
 
     protected void init(KeycloakSession session, Cache<K, SessionEntityWrapper<V>> cache, RemoteCache<K, SessionEntityWrapper<V>> remoteCache,
-                        SessionFunction<V> lifespanMsLoader, SessionFunction<V> maxIdleTimeMsLoader) {
+                        Expiration<K, V> expiration) {
         this.cache = cache;
         this.remoteCache = remoteCache;
 
         this.topologyInfo = InfinispanUtil.getTopologyInfo(session);
-
-        this.lifespanMsLoader = lifespanMsLoader;
-        this.maxIdleTimeMsLoader = maxIdleTimeMsLoader;
+        this.expiration = expiration;
         this.sessionFactory = session.getKeycloakSessionFactory();
 
         ExecutorService executor = session.getProvider(ExecutorsProvider.class).getExecutor("client-listener-" + cache.getName());
@@ -88,8 +85,8 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
 
     @ClientCacheEntryCreated
-    public void created(ClientCacheEntryCreatedEvent event) {
-        K key = (K) event.getKey();
+    public void created(ClientCacheEntryCreatedEvent<K> event) {
+        K key = event.getKey();
 
         if (shouldUpdateLocalCache(event.getType(), key, event.isCommandRetried())) {
             this.executor.submit(event, () -> {
@@ -105,8 +102,8 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
 
     @ClientCacheEntryModified
-    public void updated(ClientCacheEntryModifiedEvent event) {
-        K key = (K) event.getKey();
+    public void updated(ClientCacheEntryModifiedEvent<K> event) {
+        K key = event.getKey();
 
         if (shouldUpdateLocalCache(event.getType(), key, event.isCommandRetried())) {
 
@@ -138,8 +135,8 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
             RealmModel realm = session.realms().getRealm(newWrapper.getEntity().getRealmId());
             ClientModel client = newWrapper.getClientIfNeeded(realm);
-            long lifespanMs = lifespanMsLoader.apply(realm, client, newWrapper.getEntity());
-            long maxIdleTimeMs = maxIdleTimeMsLoader.apply(realm, client, newWrapper.getEntity());
+            long lifespanMs = expiration.lifespan(key, newWrapper.getEntity(), realm, client);
+            long maxIdleTimeMs = expiration.maxIdle(key, newWrapper.getEntity(), realm, client);
 
             // It is possible the session may be expired by the time this has replicated, double check before inserting
             if (maxIdleTimeMs != SessionTimeouts.ENTRY_EXPIRED_FLAG && lifespanMs != SessionTimeouts.ENTRY_EXPIRED_FLAG) {
@@ -177,7 +174,7 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
             if (remoteSessionVersioned.getVersion() < eventVersion) {
                 try {
                     logger.debugf("Got replace remote entity event prematurely for entity '%s', will try again. Event version: %d, got: %d",
-                            key, eventVersion, remoteSessionVersioned == null ? -1 : remoteSessionVersioned.getVersion());
+                            key, eventVersion, remoteSessionVersioned.getVersion());
                     Thread.sleep(new Random().nextInt(sleepInterval));  // using exponential backoff
                     continue;
                 } catch (InterruptedException ex) {
@@ -196,8 +193,8 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
                 RealmModel realm = session.realms().getRealm(sessionWrapper.getEntity().getRealmId());
                 ClientModel client = sessionWrapper.getClientIfNeeded(realm);
-                long lifespanMs = lifespanMsLoader.apply(realm, client, sessionWrapper.getEntity());
-                long maxIdleTimeMs = maxIdleTimeMsLoader.apply(realm, client, sessionWrapper.getEntity());
+                long lifespanMs = expiration.lifespan(key, sessionWrapper.getEntity(), realm, client);
+                long maxIdleTimeMs = expiration.maxIdle(key, sessionWrapper.getEntity(), realm, client);
 
                 // We received event from remoteCache, so we won't update it back
                 replaced.set(cache.getAdvancedCache().withFlags(Flag.SKIP_CACHE_STORE, Flag.SKIP_CACHE_LOAD, Flag.IGNORE_RETURN_VALUES)
@@ -213,8 +210,8 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
 
 
     @ClientCacheEntryRemoved
-    public void removed(ClientCacheEntryRemovedEvent event) {
-        K key = (K) event.getKey();
+    public void removed(ClientCacheEntryRemovedEvent<K> event) {
+        K key = event.getKey();
 
         if (shouldUpdateLocalCache(event.getType(), key, event.isCommandRetried())) {
 
@@ -249,24 +246,10 @@ public class RemoteCacheSessionListener<K, V extends SessionEntity>  {
         return result;
     }
 
-    public static <K, V extends SessionEntity> RemoteCacheSessionListener createListener(KeycloakSession session, Cache<K, SessionEntityWrapper<V>> cache, RemoteCache<K, SessionEntityWrapper<V>> remoteCache,
-                                                                                         SessionFunction<V> lifespanMsLoader, SessionFunction<V> maxIdleTimeMsLoader) {
-        /*boolean isCoordinator = InfinispanUtil.isCoordinator(cache);
-
-        // Just cluster coordinator will fetch userSessions from remote cache.
-        // In case that coordinator is failover during state fetch, there is slight risk that not all userSessions will be fetched to local cluster. Assume acceptable for now
-        RemoteCacheSessionListener listener;
-        if (isCoordinator) {
-            logger.infof("Will fetch initial state from remote cache for cache '%s'", cache.getName());
-            listener = new FetchInitialStateCacheListener();
-        } else {
-            logger.infof("Won't fetch initial state from remote cache for cache '%s'", cache.getName());
-            listener = new DontFetchInitialStateCacheListener();
-        }*/
-
+    public static <K, V extends SessionEntity> RemoteCacheSessionListener<K, V> createListener(KeycloakSession session, Cache<K, SessionEntityWrapper<V>> cache, RemoteCache<K, SessionEntityWrapper<V>> remoteCache,
+                                                                                         Expiration<K, V> expiration) {
         RemoteCacheSessionListener<K, V> listener = new RemoteCacheSessionListener<>();
-        listener.init(session, cache, remoteCache, lifespanMsLoader, maxIdleTimeMsLoader);
-
+        listener.init(session, cache, remoteCache, expiration);
         return listener;
     }
 

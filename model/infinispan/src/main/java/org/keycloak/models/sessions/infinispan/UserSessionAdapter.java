@@ -17,6 +17,14 @@
 
 package org.keycloak.models.sessions.infinispan;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+
 import org.keycloak.common.Profile;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
@@ -25,25 +33,16 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserSessionProvider;
-import org.keycloak.models.sessions.infinispan.changes.SessionsChangelogBasedTransaction;
-import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshChecker;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.changes.SessionsChangelogBasedTransaction;
 import org.keycloak.models.sessions.infinispan.changes.Tasks;
 import org.keycloak.models.sessions.infinispan.changes.UserSessionUpdateTask;
+import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshChecker;
 import org.keycloak.models.sessions.infinispan.changes.sessions.CrossDCLastSessionRefreshListener;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionStore;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
-
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -54,9 +53,9 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
 
     private final T provider;
 
-    private final SessionsChangelogBasedTransaction<String, UserSessionEntity> userSessionUpdateTx;
+    private final SessionsChangelogBasedTransaction<SessionKey, UserSessionEntity> userSessionUpdateTx;
 
-    private final SessionsChangelogBasedTransaction<UUID, AuthenticatedClientSessionEntity> clientSessionUpdateTx;
+    private final SessionsChangelogBasedTransaction<SessionKey, AuthenticatedClientSessionEntity> clientSessionUpdateTx;
 
     private final RealmModel realm;
 
@@ -69,8 +68,8 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
     private SessionPersistenceState persistenceState;
 
     public UserSessionAdapter(KeycloakSession session, UserModel user, T provider,
-                              SessionsChangelogBasedTransaction<String, UserSessionEntity> userSessionUpdateTx,
-                              SessionsChangelogBasedTransaction<UUID, AuthenticatedClientSessionEntity> clientSessionUpdateTx,
+                              SessionsChangelogBasedTransaction<SessionKey, UserSessionEntity> userSessionUpdateTx,
+                              SessionsChangelogBasedTransaction<SessionKey, AuthenticatedClientSessionEntity> clientSessionUpdateTx,
                               RealmModel realm, UserSessionEntity entity, boolean offline) {
         this.session = session;
         this.user = user;
@@ -90,11 +89,11 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
         List<String> removedClientUUIDS = new LinkedList<>();
 
         if (clientSessionEntities != null) {
-            clientSessionEntities.forEach((String key, UUID value) -> {
+            clientSessionEntities.forEach((String key, String uuid) -> {
                 // Check if client still exists
                 ClientModel client = realm.getClientById(key);
                 if (client != null) {
-                    final AuthenticatedClientSessionModel clientSession = provider.getClientSession(this, client, value.toString(), offline);
+                    final AuthenticatedClientSessionModel clientSession = provider.getClientSession(this, client, uuid, offline);
                     if (clientSession != null) {
                         result.put(key, clientSession);
                     }
@@ -111,8 +110,7 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
 
     @Override
     public AuthenticatedClientSessionModel getAuthenticatedClientSessionByClient(String clientUUID) {
-        AuthenticatedClientSessionStore clientSessionEntities = entity.getAuthenticatedClientSessions();
-        final UUID clientSessionId = clientSessionEntities.get(clientUUID);
+        final String clientSessionId = entity.getAuthenticatedClientSessions().get(clientUUID);
 
         if (clientSessionId == null) {
             return null;
@@ -156,10 +154,11 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
 
         // do not iterate the removedClientUUIDS and remove the clientSession directly as the addTask can manipulate
         // the collection being iterated, and that can lead to unpredictable behaviour (e.g. NPE)
-        List<UUID> clientSessionUuids = removedClientUUIDS.stream()
+        List<SessionKey> clientSessionUuids = removedClientUUIDS.stream()
                 .map(entity.getAuthenticatedClientSessions()::get)
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .map(id -> new SessionKey(id, offline))
+                .toList();
 
         clientSessionUuids.forEach(clientSessionId -> this.clientSessionUpdateTx.addTask(clientSessionId, Tasks.removeSync(offline)));
     }
@@ -236,7 +235,7 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
             // The other DC already did.
             Boolean ignoreRemoteCacheUpdate = (Boolean) session.getAttribute(CrossDCLastSessionRefreshListener.IGNORE_REMOTE_CACHE_UPDATE);
             if (ignoreRemoteCacheUpdate == null || !ignoreRemoteCacheUpdate) {
-                provider.getPersisterLastSessionRefreshStore().putLastSessionRefresh(session, entity.getId(), realm.getId(), lastSessionRefresh);
+                provider.getPersisterLastSessionRefreshStore().putLastSessionRefresh(session, entity.getId(), realm.getId(), lastSessionRefresh, true);
             }
         }
 
@@ -252,7 +251,7 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
 
             @Override
             public CrossDCMessageStatus getCrossDCMessageStatus(SessionEntityWrapper<UserSessionEntity> sessionWrapper) {
-                return new CrossDCLastSessionRefreshChecker(provider.getLastSessionRefreshStore(), provider.getOfflineLastSessionRefreshStore())
+                return new CrossDCLastSessionRefreshChecker(provider.getLastSessionRefreshStore())
                         .shouldSaveUserSessionToRemoteCache(UserSessionAdapter.this.session, UserSessionAdapter.this.realm, sessionWrapper, offline, lastSessionRefresh);
             }
 
@@ -407,7 +406,7 @@ public class UserSessionAdapter<T extends SessionRefreshStore & UserSessionProvi
     }
 
     void update(UserSessionUpdateTask task) {
-        userSessionUpdateTx.addTask(getId(), task);
+        userSessionUpdateTx.addTask(new SessionKey(getId(), offline), task);
     }
 
 }

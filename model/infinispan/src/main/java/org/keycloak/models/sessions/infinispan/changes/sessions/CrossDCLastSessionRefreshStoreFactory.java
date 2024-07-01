@@ -21,6 +21,7 @@ import org.infinispan.Cache;
 import org.keycloak.cluster.ClusterProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 
 /**
@@ -33,19 +34,19 @@ public class CrossDCLastSessionRefreshStoreFactory extends AbstractLastSessionRe
     public static final String LSR_OFFLINE_PERIODIC_TASK_NAME = "lastSessionRefreshes-offline";
 
 
-    public CrossDCLastSessionRefreshStore createAndInit(KeycloakSession kcSession, Cache<String, SessionEntityWrapper<UserSessionEntity>> cache, boolean offline) {
+    public CrossDCLastSessionRefreshStore createAndInit(KeycloakSession kcSession, Cache<SessionKey, SessionEntityWrapper<UserSessionEntity>> cache, boolean offline) {
         return createAndInit(kcSession, cache, DEFAULT_TIMER_INTERVAL_MS, DEFAULT_MAX_INTERVAL_BETWEEN_MESSAGES_SECONDS, DEFAULT_MAX_COUNT, offline);
     }
 
 
-    public CrossDCLastSessionRefreshStore createAndInit(KeycloakSession kcSession, Cache<String, SessionEntityWrapper<UserSessionEntity>> cache,
+    public CrossDCLastSessionRefreshStore createAndInit(KeycloakSession kcSession, Cache<SessionKey, SessionEntityWrapper<UserSessionEntity>> cache,
                                                         long timerIntervalMs, int maxIntervalBetweenMessagesSeconds, int maxCount, boolean offline) {
         String eventKey = offline ? LSR_OFFLINE_PERIODIC_TASK_NAME :  LSR_PERIODIC_TASK_NAME;
-        CrossDCLastSessionRefreshStore store = createStoreInstance(maxIntervalBetweenMessagesSeconds, maxCount, eventKey);
+        CrossDCLastSessionRefreshStore store = createStoreInstance(maxIntervalBetweenMessagesSeconds, maxCount, LSR_PERIODIC_TASK_NAME);
 
         // Register listener
         ClusterProvider cluster = kcSession.getProvider(ClusterProvider.class);
-        cluster.registerListener(eventKey, new CrossDCLastSessionRefreshListener(kcSession, cache, offline));
+        cluster.registerListener(LSR_PERIODIC_TASK_NAME, new CrossDCLastSessionRefreshListener(kcSession, cache));
 
         // Setup periodic timer check
         setupPeriodicTimer(kcSession, store, timerIntervalMs, eventKey);

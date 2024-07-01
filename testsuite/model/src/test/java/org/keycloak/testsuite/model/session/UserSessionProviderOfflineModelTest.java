@@ -57,6 +57,7 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.UserSessionProvider;
 import org.keycloak.models.session.UserSessionPersisterProvider;
 import org.keycloak.models.sessions.infinispan.changes.sessions.PersisterLastSessionRefreshStoreFactory;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.utils.ResetTimeOffsetEvent;
 import org.keycloak.services.managers.UserSessionManager;
 import org.keycloak.testsuite.model.KeycloakModelTest;
@@ -379,7 +380,7 @@ public class UserSessionProviderOfflineModelTest extends KeycloakModelTest {
                 log.debug("Joining the cluster");
                 inComittedTransaction(session -> {
                     InfinispanConnectionProvider provider = session.getProvider(InfinispanConnectionProvider.class);
-                    Cache<String, Object> cache = provider.getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
+                    Cache<SessionKey, Object> cache = provider.getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME);
                     while (!cache.getAdvancedCache().getDistributionManager().isJoinComplete()) {
                         sleep(1000);
                     }
@@ -425,7 +426,7 @@ public class UserSessionProviderOfflineModelTest extends KeycloakModelTest {
         withRealm(realmId, (session, realm) -> {
             // remove offline client sessions from the cache
             // this simulates the cases when offline client sessions are lost from the cache due to various reasons (a cache limit/expiration/preloading issue)
-            session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).clear();
+            session.getProvider(InfinispanConnectionProvider.class).getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).clear();
 
             String clientUUID = realm.getClientByClientId("test-app").getId();
 
@@ -479,7 +480,7 @@ public class UserSessionProviderOfflineModelTest extends KeycloakModelTest {
             // remove offline client sessions from the cache
             // this simulates the cases when offline client sessions are lost from the cache due to various reasons (a cache limit/expiration/preloading issue)
             session.getProvider(InfinispanConnectionProvider.class)
-                    .getCache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).clear();
+                    .getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).clear();
 
             String clientUUID = realm.getClientByClientId("test-app").getId();
 
@@ -510,8 +511,8 @@ public class UserSessionProviderOfflineModelTest extends KeycloakModelTest {
             InfinispanConnectionProvider provider = session.getProvider(InfinispanConnectionProvider.class);
 
             // skip remote cache load as we are only interested in embedded caches
-            AdvancedCache offlineUSCache = provider.getCache(InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME).getAdvancedCache().withFlags(Flag.SKIP_CACHE_LOAD);
-            AdvancedCache offlineCSCache = provider.getCache(InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME).getAdvancedCache().withFlags(Flag.SKIP_CACHE_LOAD);
+            AdvancedCache offlineUSCache = provider.getCache(InfinispanConnectionProvider.USER_SESSION_CACHE_NAME).getAdvancedCache().withFlags(Flag.SKIP_CACHE_LOAD);
+            AdvancedCache offlineCSCache = provider.getCache(InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME).getAdvancedCache().withFlags(Flag.SKIP_CACHE_LOAD);
 
             Assert.assertEquals(0, offlineUSCache.size());
             Assert.assertEquals(0, offlineCSCache.size());

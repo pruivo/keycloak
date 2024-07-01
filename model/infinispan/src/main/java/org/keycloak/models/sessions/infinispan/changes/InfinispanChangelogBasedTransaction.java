@@ -19,13 +19,12 @@ package org.keycloak.models.sessions.infinispan.changes;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import org.infinispan.Cache;
 import org.infinispan.context.Flag;
 import org.jboss.logging.Logger;
-import org.keycloak.common.Profile;
+import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.models.AbstractKeycloakTransaction;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -34,12 +33,6 @@ import org.keycloak.models.sessions.infinispan.CacheDecorators;
 import org.keycloak.models.sessions.infinispan.SessionFunction;
 import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheInvoker;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -150,11 +143,8 @@ public class InfinispanChangelogBasedTransaction<K, V extends SessionEntity> ext
             return wrappedEntity;
         } else {
             // If entity is scheduled for remove, we don't return it.
-            boolean scheduledForRemove = myUpdates.getUpdateTasks().stream().filter((SessionUpdateTask task) -> {
-
-                return task.getOperation() == SessionUpdateTask.CacheOperation.REMOVE;
-
-            }).findFirst().isPresent();
+            boolean scheduledForRemove = myUpdates.getUpdateTasks().stream()
+                    .anyMatch(task -> task.getOperation() == SessionUpdateTask.CacheOperation.REMOVE);
 
             return scheduledForRemove ? null : myUpdates.getEntityWrapper();
         }

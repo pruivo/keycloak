@@ -24,6 +24,7 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.marshalling.Marshalling;
 import org.keycloak.models.sessions.infinispan.AuthenticatedClientSessionAdapter;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 
 import java.util.Map;
@@ -33,9 +34,10 @@ import java.util.function.Predicate;
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 @ProtoTypeId(Marshalling.USER_SESSION_PREDICATE)
-public class UserSessionPredicate implements Predicate<Map.Entry<String, SessionEntityWrapper<UserSessionEntity>>> {
+public class UserSessionPredicate implements Predicate<Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>>> {
 
     private final String realm;
+    private final boolean offline;
 
     private String user;
 
@@ -44,8 +46,9 @@ public class UserSessionPredicate implements Predicate<Map.Entry<String, Session
     private String brokerSessionId;
     private String brokerUserId;
 
-    private UserSessionPredicate(String realm) {
+    private UserSessionPredicate(String realm, boolean offline) {
         this.realm = realm;
+        this.offline = offline;
     }
 
     /**
@@ -53,8 +56,8 @@ public class UserSessionPredicate implements Predicate<Map.Entry<String, Session
      * @param realm
      * @return
      */
-    public static UserSessionPredicate create(String realm) {
-        return new UserSessionPredicate(realm);
+    public static UserSessionPredicate create(String realm, boolean offline) {
+        return new UserSessionPredicate(realm, offline);
     }
 
     public UserSessionPredicate user(String user) {
@@ -115,9 +118,14 @@ public class UserSessionPredicate implements Predicate<Map.Entry<String, Session
         return client;
     }
 
+    @ProtoField(6)
+    boolean isOffline() {
+        return offline;
+    }
+
     @ProtoFactory
-    static UserSessionPredicate create(String userId, String brokerSessionId, String brokerUserId, String realm, String client) {
-        return create(realm)
+    static UserSessionPredicate create(String userId, String brokerSessionId, String brokerUserId, String realm, String client, boolean offline) {
+        return create(realm, offline)
                 .user(Marshalling.emptyStringToNull(userId))
                 .client(Marshalling.emptyStringToNull(client))
                 .brokerSessionId(Marshalling.emptyStringToNull(brokerSessionId))
@@ -125,10 +133,11 @@ public class UserSessionPredicate implements Predicate<Map.Entry<String, Session
     }
 
     @Override
-    public boolean test(Map.Entry<String, SessionEntityWrapper<UserSessionEntity>> entry) {
+    public boolean test(Map.Entry<SessionKey, SessionEntityWrapper<UserSessionEntity>> entry) {
         UserSessionEntity entity = entry.getValue().getEntity();
 
-        return realm.equals(entity.getRealmId()) &&
+        return offline == entry.getKey().offline() &&
+                realm.equals(entity.getRealmId()) &&
                 (user == null || entity.getUser().equals(user)) &&
                 (client == null || (entity.getAuthenticatedClientSessions() != null && entity.getAuthenticatedClientSessions().containsKey(client))) &&
                 (brokerSessionId == null || brokerSessionId.equals(entity.getBrokerSessionId())) &&

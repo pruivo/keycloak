@@ -22,14 +22,12 @@ import org.infinispan.persistence.remote.RemoteStore;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.cluster.ClusterProvider;
-import org.keycloak.common.util.Time;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.KeycloakSessionTask;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserLoginFailureProvider;
 import org.keycloak.models.UserLoginFailureProviderFactory;
 import org.keycloak.models.UserModel;
@@ -37,16 +35,15 @@ import org.keycloak.models.sessions.infinispan.changes.SerializeExecutionsByKey;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
-import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
 import org.keycloak.models.sessions.infinispan.events.AbstractUserSessionClusterListener;
 import org.keycloak.models.sessions.infinispan.events.RealmRemovedSessionEvent;
 import org.keycloak.models.sessions.infinispan.events.RemoveAllUserLoginFailuresEvent;
 import org.keycloak.models.sessions.infinispan.initializer.InfinispanCacheInitializer;
 import org.keycloak.models.sessions.infinispan.initializer.InitializerState;
+import org.keycloak.models.sessions.infinispan.remotestore.Expiration;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheInvoker;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheSessionListener;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheSessionsLoader;
-import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.EnvironmentDependentProviderFactory;
@@ -135,31 +132,28 @@ public class InfinispanUserLoginFailureProviderFactory implements UserLoginFailu
         InfinispanConnectionProvider ispn = session.getProvider(InfinispanConnectionProvider.class);
 
         Cache<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> loginFailuresCache = ispn.getCache(InfinispanConnectionProvider.LOGIN_FAILURE_CACHE_NAME);
-        checkRemoteCache(session, loginFailuresCache, (RealmModel realm) ->
-                Time.toMillis(realm.getMaxDeltaTimeSeconds()), SessionTimeouts::getLoginFailuresLifespanMs, SessionTimeouts::getLoginFailuresMaxIdleMs);
+        checkRemoteCache(session, loginFailuresCache);
     }
 
-    private <K, V extends SessionEntity> RemoteCache checkRemoteCache(KeycloakSession session, Cache<K, SessionEntityWrapper<V>> ispnCache, RemoteCacheInvoker.MaxIdleTimeLoader maxIdleLoader,
-                                                                      SessionFunction<V> lifespanMsLoader, SessionFunction<V> maxIdleTimeMsLoader) {
+    private void checkRemoteCache(KeycloakSession session, Cache<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> ispnCache) {
         Set<RemoteStore> remoteStores = InfinispanUtil.getRemoteStores(ispnCache);
 
         if (remoteStores.isEmpty()) {
             log.debugf("No remote store configured for cache '%s'", ispnCache.getName());
-            return null;
+            return;
         } else {
             log.infof("Remote store configured for cache '%s'", ispnCache.getName());
 
-            RemoteCache<K, SessionEntityWrapper<V>> remoteCache = (RemoteCache) remoteStores.iterator().next().getRemoteCache();
+            RemoteCache<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> remoteCache = (RemoteCache) remoteStores.iterator().next().getRemoteCache();
 
             if (remoteCache == null) {
                 throw new IllegalStateException("No remote cache available for the infinispan cache: " + ispnCache.getName());
             }
 
-            remoteCacheInvoker.addRemoteCache(ispnCache.getName(), remoteCache, maxIdleLoader);
+            remoteCacheInvoker.addRemoteCache(ispnCache.getName(), remoteCache, Expiration.LOGIN_FAILURE_ENTITY_EXPIRATION);
 
-            RemoteCacheSessionListener hotrodListener = RemoteCacheSessionListener.createListener(session, ispnCache, remoteCache, lifespanMsLoader, maxIdleTimeMsLoader);
+            RemoteCacheSessionListener<LoginFailureKey, LoginFailureEntity> hotrodListener = RemoteCacheSessionListener.createListener(session, ispnCache, remoteCache, Expiration.LOGIN_FAILURE_ENTITY_EXPIRATION);
             remoteCache.addClientListener(hotrodListener);
-            return remoteCache;
         }
     }
 

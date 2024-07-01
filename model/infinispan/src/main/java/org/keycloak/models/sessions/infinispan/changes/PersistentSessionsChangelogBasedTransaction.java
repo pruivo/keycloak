@@ -17,6 +17,11 @@
 
 package org.keycloak.models.sessions.infinispan.changes;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+
 import org.infinispan.Cache;
 import org.jboss.logging.Logger;
 import org.keycloak.common.Profile;
@@ -28,15 +33,7 @@ import org.keycloak.models.sessions.infinispan.SessionFunction;
 import org.keycloak.models.sessions.infinispan.entities.SessionEntity;
 import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheInvoker;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.stream.Stream;
-
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
 
 abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends SessionEntity> extends AbstractKeycloakTransaction implements SessionsChangelogBasedTransaction<K, V> {
@@ -44,10 +41,8 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
     private static final Logger LOG = Logger.getLogger(PersistentSessionsChangelogBasedTransaction.class);
     protected final KeycloakSession kcSession;
     protected final Map<K, SessionUpdatesList<V>> updates = new HashMap<>();
-    protected final Map<K, SessionUpdatesList<V>> offlineUpdates = new HashMap<>();
     private final List<SessionChangesPerformer<K, V>> changesPerformers;
-    private final Cache<K, SessionEntityWrapper<V>> cache;
-    private final Cache<K, SessionEntityWrapper<V>> offlineCache;
+    protected final Cache<K, SessionEntityWrapper<V>> cache;
     private final SessionFunction<V> lifespanMsLoader;
     private final SessionFunction<V> maxIdleTimeMsLoader;
     private final SessionFunction<V> offlineLifespanMsLoader;
@@ -55,15 +50,13 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
 
     public PersistentSessionsChangelogBasedTransaction(KeycloakSession session,
                                                        Cache<K, SessionEntityWrapper<V>> cache,
-                                                       Cache<K, SessionEntityWrapper<V>> offlineCache,
                                                        RemoteCacheInvoker remoteCacheInvoker,
                                                        SessionFunction<V> lifespanMsLoader,
                                                        SessionFunction<V> maxIdleTimeMsLoader,
                                                        SessionFunction<V> offlineLifespanMsLoader,
                                                        SessionFunction<V> offlineMaxIdleTimeMsLoader,
                                                        ArrayBlockingQueue<PersistentUpdate> batchingQueue,
-                                                       SerializeExecutionsByKey<K> serializerOnline,
-                                                       SerializeExecutionsByKey<K> serializerOffline) {
+                                                       SerializeExecutionsByKey<K> serializer) {
         kcSession = session;
 
         if (!Profile.isFeatureEnabled(Profile.Feature.PERSISTENT_USER_SESSIONS)) {
@@ -73,54 +66,21 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
         if (! (
                 cache.getName().equals(USER_SESSION_CACHE_NAME)
                         || cache.getName().equals(CLIENT_SESSION_CACHE_NAME)
-                        || cache.getName().equals(OFFLINE_USER_SESSION_CACHE_NAME)
-                        || cache.getName().equals(OFFLINE_CLIENT_SESSION_CACHE_NAME)
         )) {
             throw new IllegalStateException("Cache name is not valid for persistent user sessions: " + cache.getName());
         }
 
         changesPerformers = List.of(
                 new JpaChangesPerformer<>(cache.getName(), batchingQueue),
-                new EmbeddedCachesChangesPerformer<>(cache, serializerOnline) {
-                    @Override
-                    public boolean shouldConsumeChange(V entity) {
-                        return !entity.isOffline();
-                    }
-                },
-                new EmbeddedCachesChangesPerformer<>(offlineCache, serializerOffline){
-                    @Override
-                    public boolean shouldConsumeChange(V entity) {
-                        return entity.isOffline();
-                    }
-                },
-                new RemoteCachesChangesPerformer<>(session, cache, remoteCacheInvoker) {
-                    @Override
-                    public boolean shouldConsumeChange(V entity) {
-                        return !entity.isOffline();
-                    }
-                },
-                new RemoteCachesChangesPerformer<>(session, offlineCache, remoteCacheInvoker) {
-                    @Override
-                    public boolean shouldConsumeChange(V entity) {
-                        return entity.isOffline();
-                    }
-                }
+                new EmbeddedCachesChangesPerformer<>(cache, serializer),
+                new RemoteCachesChangesPerformer<>(session, cache, remoteCacheInvoker)
         );
 
         this.cache = cache;
-        this.offlineCache = offlineCache;
         this.lifespanMsLoader = lifespanMsLoader;
         this.maxIdleTimeMsLoader = maxIdleTimeMsLoader;
         this.offlineLifespanMsLoader = offlineLifespanMsLoader;
         this.offlineMaxIdleTimeMsLoader = offlineMaxIdleTimeMsLoader;
-    }
-
-    protected Cache<K, SessionEntityWrapper<V>> getCache(boolean offline) {
-        if (offline) {
-            return offlineCache;
-        } else {
-            return cache;
-        }
     }
 
     protected SessionFunction<V> getLifespanMsLoader(boolean offline) {
@@ -139,18 +99,10 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
         }
     }
 
-    protected Map<K, SessionUpdatesList<V>> getUpdates(boolean offline) {
-        if (offline) {
-            return offlineUpdates;
-        } else {
-            return updates;
-        }
-    }
-
     public SessionEntityWrapper<V> get(K key, boolean offline){
-        SessionUpdatesList<V> myUpdates = getUpdates(offline).get(key);
+        SessionUpdatesList<V> myUpdates = updates.get(key);
         if (myUpdates == null) {
-            SessionEntityWrapper<V> wrappedEntity = getCache(offline).get(key);
+            SessionEntityWrapper<V> wrappedEntity = cache.get(key);
             if (wrappedEntity == null) {
                 return null;
             }
@@ -159,12 +111,10 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
             RealmModel realm = kcSession.realms().getRealm(wrappedEntity.getEntity().getRealmId());
 
             myUpdates = new SessionUpdatesList<>(realm, wrappedEntity);
-            getUpdates(offline).put(key, myUpdates);
+            updates.put(key, myUpdates);
 
             return wrappedEntity;
         } else {
-            V entity = myUpdates.getEntityWrapper().getEntity();
-
             // If entity is scheduled for remove, we don't return it.
             boolean scheduledForRemove = myUpdates.getUpdateTasks().stream()
                     .map(SessionUpdateTask::getOperation)
@@ -176,7 +126,7 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
 
     @Override
     protected void commitImpl() {
-        for (Map.Entry<K, SessionUpdatesList<V>> entry : Stream.concat(updates.entrySet().stream(), offlineUpdates.entrySet().stream()).toList()) {
+        for (Map.Entry<K, SessionUpdatesList<V>> entry : updates.entrySet()) {
             SessionUpdatesList<V> sessionUpdates = entry.getValue();
             SessionEntityWrapper<V> sessionWrapper = sessionUpdates.getEntityWrapper();
             V entity = sessionWrapper.getEntity();
@@ -204,15 +154,14 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
 
     @Override
     public void addTask(K key, SessionUpdateTask<V> originalTask) {
-        if (! (originalTask instanceof PersistentSessionUpdateTask)) {
+        if (! (originalTask instanceof PersistentSessionUpdateTask<V> task)) {
             throw new IllegalArgumentException("Task must be instance of PersistentSessionUpdateTask");
         }
 
-        PersistentSessionUpdateTask<V> task = (PersistentSessionUpdateTask<V>) originalTask;
-        SessionUpdatesList<V> myUpdates = getUpdates(task.isOffline()).get(key);
+        SessionUpdatesList<V> myUpdates = updates.get(key);
         if (myUpdates == null) {
             // Lookup entity from cache
-            SessionEntityWrapper<V> wrappedEntity = getCache(task.isOffline()).get(key);
+            SessionEntityWrapper<V> wrappedEntity = cache.get(key);
             if (wrappedEntity == null) {
                 LOG.tracef("Not present cache item for key %s", key);
                 return;
@@ -223,7 +172,7 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
             RealmModel realm = kcSession.realms().getRealm(wrappedEntity.getEntity().getRealmId());
 
             myUpdates = new SessionUpdatesList<>(realm, wrappedEntity);
-            getUpdates(task.isOffline()).put(key, myUpdates);
+            updates.put(key, myUpdates);
         }
 
         // Run the update now, so reader in same transaction can see it (TODO: Rollback may not work correctly. See if it's an issue..)
@@ -239,7 +188,7 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
         RealmModel realm = kcSession.realms().getRealm(entity.getRealmId());
         SessionEntityWrapper<V> wrappedEntity = new SessionEntityWrapper<>(entity);
         SessionUpdatesList<V> myUpdates = new SessionUpdatesList<>(realm, wrappedEntity, persistenceState);
-        getUpdates(entity.isOffline()).put(key, myUpdates);
+        updates.put(key, myUpdates);
 
         if (task != null) {
             // Run the update now, so reader in same transaction can see it
@@ -252,21 +201,20 @@ abstract public class PersistentSessionsChangelogBasedTransaction<K, V extends S
         if (entity == null) {
             throw new IllegalArgumentException("Null entity not allowed");
         }
-        boolean offline = entity.getEntity().isOffline();
 
-        SessionEntityWrapper<V> latestEntity = getCache(offline).get(key);
+        SessionEntityWrapper<V> latestEntity = cache.get(key);
         if (latestEntity == null) {
             return;
         }
 
         SessionUpdatesList<V> newUpdates = new SessionUpdatesList<>(realm, latestEntity);
 
-        SessionUpdatesList<V> existingUpdates = getUpdates(entity.getEntity().isOffline()).get(key);
+        SessionUpdatesList<V> existingUpdates = updates.get(key);
         if (existingUpdates != null) {
             newUpdates.setUpdateTasks(existingUpdates.getUpdateTasks());
         }
 
-        getUpdates(entity.getEntity().isOffline()).put(key, newUpdates);
+        updates.put(key, newUpdates);
     }
 
     @Override

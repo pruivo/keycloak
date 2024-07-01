@@ -18,16 +18,19 @@
 package org.keycloak.models.sessions.infinispan.util;
 
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 
 import org.infinispan.Cache;
 import org.infinispan.affinity.KeyAffinityService;
 import org.infinispan.affinity.KeyAffinityServiceFactory;
 import org.infinispan.affinity.KeyGenerator;
+import org.infinispan.factories.GlobalComponentRegistry;
+import org.infinispan.remoting.transport.Address;
+import org.infinispan.util.concurrent.BlockingManager;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.sessions.infinispan.entities.SessionKey;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.sessions.StickySessionEncoderProvider;
 
@@ -38,66 +41,72 @@ public class InfinispanKeyGenerator {
 
     private static final Logger log = Logger.getLogger(InfinispanKeyGenerator.class);
 
+    private static final KeyGenerator<SessionKey> ONLINE_GENERATOR = SessionKey::randomOnlineSessionKey;
+    private static final KeyGenerator<SessionKey> OFFLINE_GENERATOR = SessionKey::randomOfflineSessionKey;
+    private static final KeyGenerator<String> STRING_GENERATOR = KeycloakModelUtils::generateId;
 
-    private final Map<String, KeyAffinityService> keyAffinityServices = new ConcurrentHashMap<>();
+    private final Map<String, KeyAffinityService<String>> keyAffinityServices = new ConcurrentHashMap<>();
+    private final Map<String, KeyAffinityServiceHolder> sessionsKeyAffinityServices = new ConcurrentHashMap<>();
 
 
     public String generateKeyString(KeycloakSession session, Cache<String, ?> cache) {
-        return generateKey(session, cache, new StringKeyGenerator());
-    }
-
-
-    public UUID generateKeyUUID(KeycloakSession session, Cache<UUID, ?> cache) {
-        return generateKey(session, cache, new UUIDKeyGenerator());
-    }
-
-
-    private <K> K generateKey(KeycloakSession session, Cache<K, ?> cache, KeyGenerator<K> keyGenerator) {
-        String cacheName = cache.getName();
-
         // "wantsLocalKey" is true if route is not attached to the sticky session cookie. Without attached route, We want the key, which will be "owned" by this node.
         // This is needed due the fact that external loadbalancer will attach route corresponding to our node, which will be the owner of the particular key, hence we
         // will be able to lookup key locally.
-        boolean wantsLocalKey = !session.getProvider(StickySessionEncoderProvider.class).shouldAttachRoute();
-
-        if (wantsLocalKey && cache.getCacheConfiguration().clustering().cacheMode().isClustered()) {
-            KeyAffinityService<K> keyAffinityService = keyAffinityServices.computeIfAbsent(cacheName, s -> {
-                KeyAffinityService<K> k = createKeyAffinityService(cache, keyGenerator);
-                log.debugf("Registered key affinity service for cache '%s'", cacheName);
-                return k;
-            });
-            return keyAffinityService.getKeyForAddress(cache.getCacheManager().getAddress());
-        } else {
-            return keyGenerator.getKey();
-        }
-
-    }
-
-
-    private <K> KeyAffinityService<K> createKeyAffinityService(Cache<K, ?> cache, KeyGenerator<K> keyGenerator) {
-        // SingleThreadExecutor is recommended due it needs the single thread and leave it in the WAITING state
-        return KeyAffinityServiceFactory.newLocalKeyAffinityService(
-                cache,
-                keyGenerator,
-                Executors.newSingleThreadExecutor(),
-                16);
-    }
-
-
-    private static class UUIDKeyGenerator implements KeyGenerator<UUID> {
-
-        @Override
-        public UUID getKey() {
-            return UUID.randomUUID();
-        }
-    }
-
-
-    private static class StringKeyGenerator implements KeyGenerator<String> {
-
-        @Override
-        public String getKey() {
+        if (shouldAttachRoute(session) || isLocalMode(cache)) {
             return KeycloakModelUtils.generateId();
         }
+        return keyAffinityServices.computeIfAbsent(cache.getName(), s -> createStringKeyAffinityService(cache))
+                .getKeyForAddress(localAddress(cache));
+    }
+
+    public SessionKey generateSessionKey(KeycloakSession session, Cache<SessionKey, ?> cache, boolean offline) {
+        // "wantsLocalKey" is true if route is not attached to the sticky session cookie. Without attached route, We want the key, which will be "owned" by this node.
+        // This is needed due the fact that external loadbalancer will attach route corresponding to our node, which will be the owner of the particular key, hence we
+        // will be able to lookup key locally.
+        if (shouldAttachRoute(session) || isLocalMode(cache)) {
+            return SessionKey.randomSessionKey(offline);
+        }
+        return sessionsKeyAffinityServices.computeIfAbsent(cache.getName(), cacheName -> createKeyAffinityHolder(cache))
+                .service(offline)
+                .getKeyForAddress(cache.getCacheManager().getAddress());
+    }
+
+    private static KeyAffinityServiceHolder createKeyAffinityHolder(Cache<SessionKey, ?> cache) {
+        log.debugf("Registered key affinity service for cache '%s'", cache.getName());
+        var executor = executor(cache);
+        var online = KeyAffinityServiceFactory.newLocalKeyAffinityService(cache, ONLINE_GENERATOR, executor, 16);
+        var offline = KeyAffinityServiceFactory.newLocalKeyAffinityService(cache, OFFLINE_GENERATOR, executor, 16);
+        return new KeyAffinityServiceHolder(online, offline);
+    }
+
+    private static KeyAffinityService<String> createStringKeyAffinityService(Cache<String, ?> cache) {
+        log.debugf("Registered key affinity service for cache '%s'", cache.getName());
+        return KeyAffinityServiceFactory.newLocalKeyAffinityService(cache, STRING_GENERATOR, executor(cache), 16);
+    }
+
+    private static Executor executor(Cache<?, ?> cache) {
+        return GlobalComponentRegistry.componentOf(cache.getCacheManager(), BlockingManager.class).asExecutor("key-affinity-" + cache.getName());
+    }
+
+    private static Address localAddress(Cache<?, ?> cache) {
+        return cache.getCacheManager().getAddress();
+    }
+
+    private static boolean shouldAttachRoute(KeycloakSession session) {
+        return session.getProvider(StickySessionEncoderProvider.class).shouldAttachRoute();
+    }
+
+    private static boolean isLocalMode(Cache<?, ?> cache) {
+        return !cache.getCacheConfiguration().clustering().cacheMode().isClustered();
+    }
+
+    private record KeyAffinityServiceHolder(KeyAffinityService<SessionKey> onlineKeyAffinityService,
+                                            KeyAffinityService<SessionKey> offlineKeyAffinityService) {
+
+        KeyAffinityService<SessionKey> service(boolean offline) {
+            return offline ? offlineKeyAffinityService : onlineKeyAffinityService;
+        }
+
     }
 }

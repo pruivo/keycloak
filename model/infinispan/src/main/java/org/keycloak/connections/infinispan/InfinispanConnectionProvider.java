@@ -43,8 +43,6 @@ public interface InfinispanConnectionProvider extends Provider {
 
     String USER_SESSION_CACHE_NAME = "sessions";
     String CLIENT_SESSION_CACHE_NAME = "clientSessions";
-    String OFFLINE_USER_SESSION_CACHE_NAME = "offlineSessions";
-    String OFFLINE_CLIENT_SESSION_CACHE_NAME = "offlineClientSessions";
     String LOGIN_FAILURE_CACHE_NAME = "loginFailures";
     String AUTHENTICATION_SESSIONS_CACHE_NAME = "authenticationSessions";
     String WORK_CACHE_NAME = "work";
@@ -89,8 +87,6 @@ public interface InfinispanConnectionProvider extends Provider {
     String[] CLUSTERED_CACHE_NAMES = {
             USER_SESSION_CACHE_NAME,
             CLIENT_SESSION_CACHE_NAME,
-            OFFLINE_USER_SESSION_CACHE_NAME,
-            OFFLINE_CLIENT_SESSION_CACHE_NAME,
             LOGIN_FAILURE_CACHE_NAME,
             AUTHENTICATION_SESSIONS_CACHE_NAME,
             ACTION_TOKEN_CACHE,

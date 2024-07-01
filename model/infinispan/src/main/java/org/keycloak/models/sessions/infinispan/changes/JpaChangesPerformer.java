@@ -17,6 +17,16 @@
 
 package org.keycloak.models.sessions.infinispan.changes;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+
 import org.infinispan.util.function.TriConsumer;
 import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticatedClientSessionModel;
@@ -37,20 +47,7 @@ import org.keycloak.models.utils.RealmModelDelegate;
 import org.keycloak.models.utils.UserModelDelegate;
 import org.keycloak.models.utils.UserSessionModelDelegate;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.CompletableFuture;
-
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
 
 public class JpaChangesPerformer<K, V extends SessionEntity> implements SessionChangesPerformer<K, V> {
@@ -74,8 +71,8 @@ public class JpaChangesPerformer<K, V extends SessionEntity> implements SessionC
 
     private TriConsumer<KeycloakSession, Map.Entry<K, SessionUpdatesList<V>>, MergedUpdate<V>> processor() {
         return switch (cacheName) {
-            case USER_SESSION_CACHE_NAME, OFFLINE_USER_SESSION_CACHE_NAME -> this::processUserSessionUpdate;
-            case CLIENT_SESSION_CACHE_NAME, OFFLINE_CLIENT_SESSION_CACHE_NAME -> this::processClientSessionUpdate;
+            case USER_SESSION_CACHE_NAME -> this::processUserSessionUpdate;
+            case CLIENT_SESSION_CACHE_NAME -> this::processClientSessionUpdate;
             default -> throw new IllegalStateException("Unexpected value: " + cacheName);
         };
     }
@@ -352,8 +349,8 @@ public class JpaChangesPerformer<K, V extends SessionEntity> implements SessionC
                     }
 
                     @Override
-                    public UUID getId() {
-                        return UUID.fromString(clientSessionModel.getId());
+                    public String getId() {
+                        return clientSessionModel.getId();
                     }
 
                     @Override

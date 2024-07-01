@@ -22,7 +22,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
@@ -52,7 +51,7 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
     private final Map<K, T> entityChanges;
     private final UpdaterFactory<K, V, T> factory;
     private final RemoteCache<K, V> cache;
-    private Predicate<V> removePredicate;
+    private RemoveEntryPredicate<K, V> removePredicate;
 
     public RemoteChangeLogTransaction(UpdaterFactory<K, V, T> factory, RemoteCache<K, V> cache) {
         this.factory = Objects.requireNonNull(factory);
@@ -89,7 +88,7 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
         if (removePredicate != null) {
             // TODO [pruivo] [optimization] with protostream, use delete by query: DELETE FROM ...
             var rmStage = Flowable.fromPublisher(cache.publishEntriesWithMetadata(null, 2048))
-                    .filter(e -> removePredicate.test(e.getValue().getValue()))
+                    .filter(removePredicate::remove)
                     .map(Map.Entry::getKey)
                     .flatMapCompletable(this::removeKey)
                     .toCompletionStage(null);
@@ -97,7 +96,7 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
         }
 
         for (var updater : entityChanges.values()) {
-            if (updater.isReadOnly() || updater.isTransient() || (removePredicate != null && removePredicate.test(updater.getValue()))) {
+            if (updater.isReadOnly() || updater.isTransient() || (removePredicate != null && removePredicate.remove(updater))) {
                 continue;
             }
             if (updater.isDeleted()) {
@@ -188,14 +187,10 @@ public class RemoteChangeLogTransaction<K, V, T extends Updater<K, V>> extends A
     /**
      * Removes all Infinispan cache values that satisfy the given predicate.
      *
-     * @param predicate The {@link Predicate} which returns {@code true} for elements to be removed.
+     * @param predicate The {@link RemoveEntryPredicate} which returns {@code true} for elements to be removed.
      */
-    public void removeIf(Predicate<V> predicate) {
-        if (removePredicate == null) {
-            removePredicate = predicate;
-            return;
-        }
-        removePredicate = removePredicate.or(predicate);
+    public void removeIf(RemoveEntryPredicate<K, V> predicate) {
+        removePredicate = predicate;
     }
 
     public T wrap(Map.Entry<K, MetadataValue<V>> entry) {

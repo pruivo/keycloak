@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Red Hat, Inc. and/or its affiliates
+ * Copyright 2024 Red Hat, Inc. and/or its affiliates
  * and other contributors as indicated by the @author tags.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,19 +15,23 @@
  * limitations under the License.
  */
 
-package org.keycloak.models.sessions.infinispan.changes.sessions;
+package org.keycloak.models.sessions.infinispan.changes.remote;
 
-import org.infinispan.protostream.annotations.Proto;
-import org.infinispan.protostream.annotations.ProtoFactory;
-import org.infinispan.protostream.annotations.ProtoField;
-import org.infinispan.protostream.annotations.ProtoTypeId;
-import org.keycloak.marshalling.Marshalling;
+import java.util.Map;
 
-/**
- * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
- */
-@ProtoTypeId(Marshalling.SESSION_DATA)
-@Proto
-public record SessionData(String realmId, int lastSessionRefresh, boolean offline) {
+import org.infinispan.client.hotrod.MetadataValue;
+import org.keycloak.models.sessions.infinispan.changes.remote.updater.Updater;
+
+public interface RemoveEntryPredicate<K, V> {
+
+    boolean remove(K key, V value);
+
+    default boolean remove(Map.Entry<K, MetadataValue<V>> entry) {
+        return remove(entry.getKey(), entry.getValue().getValue());
+    }
+
+    default boolean remove(Updater<K, V> updater) {
+        return remove(updater.getKey(), updater.getValue());
+    }
 
 }

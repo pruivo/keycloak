@@ -17,8 +17,6 @@
 
 package org.keycloak.models.sessions.infinispan.changes.sessions;
 
-import java.util.UUID;
-
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -36,19 +34,17 @@ public class CrossDCLastSessionRefreshChecker {
     public static final Logger logger = Logger.getLogger(CrossDCLastSessionRefreshChecker.class);
 
     private final CrossDCLastSessionRefreshStore store;
-    private final CrossDCLastSessionRefreshStore offlineStore;
 
 
-    public CrossDCLastSessionRefreshChecker(CrossDCLastSessionRefreshStore store, CrossDCLastSessionRefreshStore offlineStore) {
+    public CrossDCLastSessionRefreshChecker(CrossDCLastSessionRefreshStore store) {
         this.store = store;
-        this.offlineStore = offlineStore;
     }
 
 
     public SessionUpdateTask.CrossDCMessageStatus shouldSaveUserSessionToRemoteCache(
             KeycloakSession kcSession, RealmModel realm, SessionEntityWrapper<UserSessionEntity> sessionWrapper, boolean offline, int newLastSessionRefresh) {
 
-        SessionUpdateTask.CrossDCMessageStatus baseChecks = baseChecks(kcSession, realm ,offline);
+        SessionUpdateTask.CrossDCMessageStatus baseChecks = baseChecks(kcSession, realm);
         if (baseChecks != null) {
             return baseChecks;
         }
@@ -72,8 +68,7 @@ public class CrossDCLastSessionRefreshChecker {
             logger.debugf("Skip writing last session refresh to the remoteCache. Session %s newLastSessionRefresh %d", userSessionId, newLastSessionRefresh);
         }
 
-        CrossDCLastSessionRefreshStore storeToUse = offline ? offlineStore : store;
-        storeToUse.putLastSessionRefresh(kcSession, userSessionId, realm.getId(), newLastSessionRefresh);
+        store.putLastSessionRefresh(kcSession, userSessionId, realm.getId(), newLastSessionRefresh, offline);
 
         return SessionUpdateTask.CrossDCMessageStatus.NOT_NEEDED;
     }
@@ -82,12 +77,12 @@ public class CrossDCLastSessionRefreshChecker {
     public SessionUpdateTask.CrossDCMessageStatus shouldSaveClientSessionToRemoteCache(
             KeycloakSession kcSession, RealmModel realm, SessionEntityWrapper<AuthenticatedClientSessionEntity> sessionWrapper, UserSessionModel userSession, boolean offline, int newTimestamp) {
 
-        SessionUpdateTask.CrossDCMessageStatus baseChecks = baseChecks(kcSession, realm ,offline);
+        SessionUpdateTask.CrossDCMessageStatus baseChecks = baseChecks(kcSession, realm);
         if (baseChecks != null) {
             return baseChecks;
         }
 
-        UUID clientSessionId = sessionWrapper.getEntity().getId();
+        var clientSessionId = sessionWrapper.getEntity().getId();
 
         if (offline) {
             Integer lsrr = sessionWrapper.getLocalMetadataNoteInt(AuthenticatedClientSessionEntity.LAST_TIMESTAMP_REMOTE);
@@ -110,15 +105,14 @@ public class CrossDCLastSessionRefreshChecker {
     }
 
 
-    private SessionUpdateTask.CrossDCMessageStatus baseChecks(KeycloakSession kcSession, RealmModel realm, boolean offline) {
+    private SessionUpdateTask.CrossDCMessageStatus baseChecks(KeycloakSession kcSession, RealmModel realm) {
         // revokeRefreshToken always writes everything to remoteCache immediately
         if (realm.isRevokeRefreshToken()) {
             return SessionUpdateTask.CrossDCMessageStatus.SYNC;
         }
 
         // We're likely not in cross-dc environment. Doesn't matter what we return
-        CrossDCLastSessionRefreshStore storeToUse = offline ? offlineStore : store;
-        if (storeToUse == null) {
+        if (store == null) {
             return SessionUpdateTask.CrossDCMessageStatus.SYNC;
         }
 
