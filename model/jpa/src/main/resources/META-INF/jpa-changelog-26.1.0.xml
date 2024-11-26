@@ -44,4 +44,21 @@
         <dropTable tableName="USERNAME_LOGIN_FAILURE"/>
     </changeSet>
 
+    <changeSet id="??" author="keycloak">
+        <createTable tableName="CERTIFICATES">
+            <column name="ID" type="VARCHAR(255)">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="PRIVATE_KEY" type="VARCHAR(4096)">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="PUBLIC_KEY" type="VARCHAR(4096)">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="CERTIFICATE" type="VARCHAR(4096)">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+        </createTable>
+    </changeSet>
+
 </databaseChangeLog>

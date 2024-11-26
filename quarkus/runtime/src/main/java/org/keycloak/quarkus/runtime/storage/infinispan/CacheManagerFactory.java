@@ -35,12 +35,11 @@ import java.util.stream.Stream;
 import io.agroal.api.AgroalDataSource;
 import io.micrometer.core.instrument.Metrics;
 import io.quarkus.arc.Arc;
-import jakarta.persistence.EntityManager;
-
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.client.hotrod.RemoteCacheManagerAdmin;
 import org.infinispan.client.hotrod.impl.ConfigurationProperties;
+import org.infinispan.commons.configuration.attributes.Attribute;
 import org.infinispan.commons.dataconversion.MediaType;
 import org.infinispan.commons.internal.InternalCacheNames;
 import org.infinispan.commons.util.concurrent.CompletableFutures;
@@ -50,6 +49,7 @@ import org.infinispan.configuration.cache.HashConfiguration;
 import org.infinispan.configuration.cache.PersistenceConfigurationBuilder;
 import org.infinispan.configuration.global.GlobalConfiguration;
 import org.infinispan.configuration.global.ShutdownHookBehavior;
+import org.infinispan.configuration.global.TransportConfigurationBuilder;
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.infinispan.configuration.parsing.ParserRegistry;
 import org.infinispan.manager.DefaultCacheManager;
@@ -84,6 +84,9 @@ import org.keycloak.models.sessions.infinispan.query.UserSessionQueries;
 import org.keycloak.models.sessions.infinispan.remote.RemoteInfinispanAuthenticationSessionProviderFactory;
 import org.keycloak.models.sessions.infinispan.remote.RemoteUserLoginFailureProviderFactory;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
+import org.keycloak.quarkus.runtime.storage.infinispan.tls.CliJGroupsSocketFactory;
+import org.keycloak.quarkus.runtime.storage.infinispan.tls.JGroupsSocketFactory;
+import org.keycloak.quarkus.runtime.storage.infinispan.tls.JpaJGroupsSocketFactory;
 
 import javax.net.ssl.SSLContext;
 import javax.sql.DataSource;
@@ -114,17 +117,18 @@ public class CacheManagerFactory {
 
     private final CompletableFuture<EmbeddedCacheManager> cacheManagerFuture;
     private final CompletableFuture<RemoteCacheManager> remoteCacheManagerFuture;
-    private final Function<EntityManager, EmbeddedCacheManager> jdbcCacheManagerFunction;
+    private final Function<KeycloakSession, EmbeddedCacheManager> jdbcCacheManagerFunction;
     private volatile EmbeddedCacheManager cacheManager;
+    private JGroupsSocketFactory jGroupsSocketFactory;
 
     public CacheManagerFactory(String config) {
         ConfigurationBuilderHolder builder = new ParserRegistry().parse(config);
-        if (!isJdbcPingRequired(builder)) {
+        if (!isSessionRequired(builder)) {
             cacheManagerFuture = CompletableFuture.supplyAsync(() -> startEmbeddedCacheManager(builder, null));
             jdbcCacheManagerFunction = null;
         } else {
             cacheManagerFuture = null;
-            jdbcCacheManagerFunction = em -> startEmbeddedCacheManager(builder, em);
+            jdbcCacheManagerFunction = session -> startEmbeddedCacheManager(builder, session);
         }
 
         if (InfinispanUtils.isRemoteInfinispan()) {
@@ -136,13 +140,19 @@ public class CacheManagerFactory {
         }
     }
 
-    private static boolean isJdbcPingRequired(ConfigurationBuilderHolder builder) {
+    private static boolean isSessionRequired(ConfigurationBuilderHolder builder) {
         if (InfinispanUtils.isRemoteInfinispan())
             return false;
 
         var transportConfig = builder.getGlobalConfigurationBuilder().transport();
         if (transportConfig.getTransport() == null)
             return false;
+
+        if (Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED) &&
+                (Configuration.isBlank(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE) || Configuration.isBlank(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE))) {
+            // JGroups TLS enabled and keystore or truststore are missing
+            return true;
+        }
 
         String transportStack = Configuration.getRawValue("kc.cache-stack");
         if (transportStack != null && !isJdbcPingStack(transportStack))
@@ -159,8 +169,7 @@ public class CacheManagerFactory {
         if (cacheManager == null) {
            synchronized (this) {
               if (cacheManager == null) {
-                  EntityManager em = keycloakSession.getProvider(JpaConnectionProvider.class).getEntityManager();
-                  cacheManager = jdbcCacheManagerFunction.apply(em);
+                  cacheManager = jdbcCacheManagerFunction.apply(keycloakSession);
               }
            }
         }
@@ -318,7 +327,7 @@ public class CacheManagerFactory {
         admin.reindexCache(cacheName);
     }
 
-    private EmbeddedCacheManager startEmbeddedCacheManager(ConfigurationBuilderHolder builder, EntityManager em) {
+    private EmbeddedCacheManager startEmbeddedCacheManager(ConfigurationBuilderHolder builder, KeycloakSession session) {
         logger.info("Starting Infinispan embedded cache manager");
 
         // We must disable the Infinispan default ShutdownHook as we manage the EmbeddedCacheManager lifecycle explicitly
@@ -353,7 +362,7 @@ public class CacheManagerFactory {
         } else {
             // embedded mode!
             if (builder.getNamedConfigurationBuilders().entrySet().stream().anyMatch(c -> c.getValue().clustering().cacheMode().isClustered())) {
-                configureTransportStack(builder, em);
+                configureTransportStack(builder, session);
                 configureRemoteStores(builder);
             }
             configureCacheMaxCount(builder, CachingOptions.CLUSTERED_MAX_COUNT_CACHES);
@@ -399,9 +408,10 @@ public class CacheManagerFactory {
         return Integer.getInteger("kc.cache-ispn-start-timeout", 120);
     }
 
-    private static void configureTransportStack(ConfigurationBuilderHolder builder, EntityManager em) {
+    private void configureTransportStack(ConfigurationBuilderHolder builder, KeycloakSession session) {
         var transportConfig = builder.getGlobalConfigurationBuilder().transport();
         if (Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED)) {
+            configureJGroupsTLS(transportConfig, session);
             validateTlsAvailable(transportConfig.build());
             var tls = new TLS()
                   .enabled(true)
@@ -431,27 +441,32 @@ public class CacheManagerFactory {
             return;
         }
 
+        configureJdbcPingStack(transportStack, stackXmlAttribute, builder, transportConfig, session);
+    }
+
+    private static void configureJdbcPingStack(String transportStack, Attribute<String> stackXmlAttribute, ConfigurationBuilderHolder builder, TransportConfigurationBuilder transportConfig, KeycloakSession session){
+        var em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
         var stackName = transportStack != null ?
-              transportStack :
-              stackXmlAttribute.isModified() ? stackXmlAttribute.get() : "jdbc-ping";
+                transportStack :
+                stackXmlAttribute.isModified() ? stackXmlAttribute.get() : "jdbc-ping";
         warnDeprecatedStack(stackName);
 
         var udp = stackName.endsWith("udp");
 
         var tableName = JpaUtils.getTableNameForNativeQuery("JGROUPS_PING", em);
         var attributes = Map.of(
-              // Leave initialize_sql blank as table is already created by Keycloak
-              "initialize_sql", "",
-              // Explicitly specify clear and select_all SQL to ensure "cluster_name" column is used, as the default
-              // "cluster" cannot be used with Oracle DB as it's a reserved word.
-              "clear_sql", String.format("DELETE from %s WHERE cluster_name=?", tableName),
-              "delete_single_sql", String.format("DELETE from %s WHERE address=?", tableName),
-              "insert_single_sql", String.format("INSERT INTO %s values (?, ?, ?, ?, ?)", tableName),
-              "select_all_pingdata_sql", String.format("SELECT address, name, ip, coord FROM %s WHERE cluster_name=?", tableName),
-              "remove_all_data_on_view_change", "true",
-              "register_shutdown_hook", "false",
-              "stack.combine", "REPLACE",
-              "stack.position", udp ? "PING" : "MPING"
+                // Leave initialize_sql blank as table is already created by Keycloak
+                "initialize_sql", "",
+                // Explicitly specify clear and select_all SQL to ensure "cluster_name" column is used, as the default
+                // "cluster" cannot be used with Oracle DB as it's a reserved word.
+                "clear_sql", String.format("DELETE from %s WHERE cluster_name=?", tableName),
+                "delete_single_sql", String.format("DELETE from %s WHERE address=?", tableName),
+                "insert_single_sql", String.format("INSERT INTO %s values (?, ?, ?, ?, ?)", tableName),
+                "select_all_pingdata_sql", String.format("SELECT address, name, ip, coord FROM %s WHERE cluster_name=?", tableName),
+                "remove_all_data_on_view_change", "true",
+                "register_shutdown_hook", "false",
+                "stack.combine", "REPLACE",
+                "stack.position", udp ? "PING" : "MPING"
         );
         var stack = List.of(new ProtocolConfiguration(JDBC_PING2.class.getSimpleName(), attributes));
         builder.addJGroupsStack(new EmbeddedJGroupsChannelConfigurator(stackName, stack, null), udp ? "udp" : "tcp");
@@ -459,6 +474,22 @@ public class CacheManagerFactory {
         Supplier<DataSource> dataSourceSupplier = Arc.container().select(AgroalDataSource.class)::get;
         transportConfig.addProperty(JGroupsTransport.DATA_SOURCE, dataSourceSupplier);
         transportConfig.defaultTransport().stack(stackName);
+    }
+
+    private void configureJGroupsTLS(TransportConfigurationBuilder transportConfig, KeycloakSession session) {
+        validateTlsAvailable(transportConfig.build());
+        if (Configuration.isBlank(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE) && Configuration.isBlank(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE)) {
+            jGroupsSocketFactory = new JpaJGroupsSocketFactory(session);
+        } else {
+            jGroupsSocketFactory = new CliJGroupsSocketFactory(
+                    requiredStringProperty(CACHE_EMBEDDED_MTLS_KEYSTORE_FILE_PROPERTY),
+                    requiredStringProperty(CACHE_EMBEDDED_MTLS_KEYSTORE_PASSWORD_PROPERTY),
+                    requiredStringProperty(CACHE_EMBEDDED_MTLS_TRUSTSTORE_FILE_PROPERTY),
+                    requiredStringProperty(CACHE_EMBEDDED_MTLS_TRUSTSTORE_PASSWORD_PROPERTY)
+            );
+        }
+        transportConfig.addProperty(JGroupsTransport.SOCKET_FACTORY, jGroupsSocketFactory.create());
+        logger.info("MTLS enabled for communications for embedded caches");
     }
 
     private static void warnDeprecatedStack(String stackName) {
