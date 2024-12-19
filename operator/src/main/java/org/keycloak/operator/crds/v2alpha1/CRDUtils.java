@@ -19,11 +19,23 @@ package org.keycloak.operator.crds.v2alpha1;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import io.fabric8.kubernetes.api.model.Container;
+import io.fabric8.kubernetes.api.model.PodSpec;
+import io.fabric8.kubernetes.api.model.PodTemplateSpec;
+import io.fabric8.kubernetes.api.model.apps.StatefulSet;
+import io.fabric8.kubernetes.api.model.apps.StatefulSetSpec;
+import io.fabric8.zjsonpatch.JsonDiff;
+import io.javaoperatorsdk.operator.api.reconciler.Context;
+import io.quarkus.logging.Log;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakSpec;
@@ -79,6 +91,21 @@ public final class CRDUtils {
     public static Optional<KeycloakSpec> keycloakSpecOf(Keycloak keycloak) {
         return Optional.ofNullable(keycloak)
                 .map(Keycloak::getSpec);
+    }
+
+    public static Optional<Container> firstContainerOf(StatefulSet statefulSet) {
+        return Optional.ofNullable(statefulSet)
+                .map(StatefulSet::getSpec)
+                .map(StatefulSetSpec::getTemplate)
+                .map(PodTemplateSpec::getSpec)
+                .map(PodSpec::getContainers)
+                .filter(Predicate.not(List::isEmpty))
+                .map(containers -> containers.get(0));
+    }
+
+    public static <T> JsonNode toJsonNode(T value, Context<Keycloak> context) {
+        final var kubernetesSerialization = context.getClient().getKubernetesSerialization();
+        return kubernetesSerialization.convertValue(value, JsonNode.class);
     }
 
 }

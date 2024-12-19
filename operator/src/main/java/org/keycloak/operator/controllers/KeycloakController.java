@@ -16,12 +16,20 @@
  */
 package org.keycloak.operator.controllers;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
 import io.fabric8.kubernetes.api.model.ContainerState;
 import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.PodStatus;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.StatefulSet;
+import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.client.readiness.Readiness;
 import io.fabric8.kubernetes.client.utils.KubernetesResourceUtil;
 import io.fabric8.kubernetes.client.utils.Serialization;
@@ -39,24 +47,17 @@ import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.Mappers;
 import io.quarkus.logging.Log;
-
+import jakarta.inject.Inject;
 import org.keycloak.common.util.CollectionUtil;
 import org.keycloak.operator.Config;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
+import org.keycloak.operator.crds.v2alpha1.CRDUtils;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatus;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatusAggregator;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpecBuilder;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-
-import jakarta.inject.Inject;
 
 @ControllerConfiguration(
     dependents = {
@@ -80,6 +81,7 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
     KeycloakDistConfigurator distConfigurator;
 
     volatile KeycloakDeploymentDependentResource deploymentDependentResource;
+    volatile KeycloakUpdateJobDependentResource updateJobDependentResource;
 
     @Override
     public Map<String, EventSource> prepareEventSources(EventSourceContext<Keycloak> context) {
@@ -99,6 +101,9 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
 
         this.deploymentDependentResource = new KeycloakDeploymentDependentResource(config, watchedResources, distConfigurator);
         sources.putAll(EventSourceInitializer.nameEventSourcesFromDependentResource(context, this.deploymentDependentResource));
+
+        updateJobDependentResource = new KeycloakUpdateJobDependentResource();
+        sources.putAll(EventSourceInitializer.nameEventSourcesFromDependentResource(context, updateJobDependentResource));
 
         return sources;
     }
@@ -132,6 +137,12 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
 
         if (modifiedSpec) {
             return UpdateControl.updateResource(kc);
+        }
+
+        var updateLogicControl = updateLogic(kc, context);
+        if (updateLogicControl.isPresent()) {
+            Log.info("--- Reconciliation interrupted");
+            return updateLogicControl.get();
         }
 
         // after the spec has possibly been updated, reconcile the StatefulSet
@@ -282,5 +293,51 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
                             });
                 });
     }
+
+    private Optional<UpdateControl<Keycloak>> updateLogic(Keycloak keycloak, Context<Keycloak> context) {
+        var existing = context.getSecondaryResource(StatefulSet.class);
+        if (existing.isEmpty()) {
+            // new deployment, no update needed
+            Log.info("New deployment - skipping update logic");
+            return Optional.empty();
+        }
+
+        var desiredStatefulSet = deploymentDependentResource.computeStatefulSetForUpdateLogic(keycloak, context);
+        var desiredContainer = CRDUtils.firstContainerOf(desiredStatefulSet).orElseThrow();
+        var actualContainer = CRDUtils.firstContainerOf(existing.get()).orElseThrow();
+
+        // We only compare containers for environment variables and image.
+        // For example, changing the number of replicas/instances must not trigger this logic.
+        // Same for updating labels or any volume (volumes are local to the pods)
+        if (!KeycloakUpdateJobDependentResource.requiresUpdateJob(desiredContainer, actualContainer, context)) {
+            Log.info("No changes detected in containers - skipping update logic.");
+            return Optional.empty();
+        }
+
+        KeycloakUpdateJobDependentResource.setOldDeployment(context, existing.get());
+        KeycloakUpdateJobDependentResource.setNewDeployment(context, desiredStatefulSet);
+
+        var existingJob = context.getSecondaryResource(Job.class);
+        if (existingJob.isEmpty()) {
+            updateJobDependentResource.reconcile(keycloak, context);
+            Log.info("Created Update Job");
+            return Optional.of(UpdateControl.noUpdate());
+        }
+
+        if (KeycloakUpdateJobDependentResource.isJobRunning(existingJob.get(), context)) {
+            Log.info("Update Job is running. Waiting...");
+            return Optional.of(UpdateControl.noUpdate());
+        }
+
+        var pod = KeycloakUpdateJobDependentResource.findPodForJob(existingJob.get(), context);
+        if (pod.isEmpty()) {
+            Log.info("Pod for update Job not found. Retrying...");
+            return Optional.of(UpdateControl.<Keycloak>noUpdate().rescheduleAfter(Duration.ofSeconds(10)));
+        }
+
+        KeycloakUpdateJobDependentResource.computeDecision(pod.get(), context);
+        return Optional.empty();
+    }
+
 
 }
