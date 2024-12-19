@@ -78,6 +78,11 @@ public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentR
         addPodSpecTemplate(specBuilder, primary, context);
         // we don't need retries; we use exit code != 1 to signal the upgrade decision.
         specBuilder.withBackoffLimit(0);
+        // For test KeycloakDeploymentTest#testDeploymentDurability
+        // it uses a pause image, which never ends.
+        // After 60 seconds, the job is terminated allowing the test to complete.
+        // TODO should be configurable? 
+        specBuilder.withActiveDeadlineSeconds(60L);
         specBuilder.endSpec();
         return builder.build();
     }
