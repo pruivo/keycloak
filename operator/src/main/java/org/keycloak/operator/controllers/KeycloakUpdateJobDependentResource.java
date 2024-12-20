@@ -50,14 +50,21 @@ import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 
 public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentResource<Job, Keycloak> {
 
+    // context key
     private static final String OLD_DEPLOYMENT_KEY = "update_old_stateful_set";
     private static final String NEW_DEPLOYMENT_KEY = "update_new_stateful_set";
     private static final String UPDATE_STRATEGY_KEY = "update_strategy";
 
+    // shared volume configuration
+    private static final String WORK_DIR_VOLUME_NAME = "workdir";
+    private static final String WORK_DIR_VOLUME_MOUNT_PATH = "/mnt/workdir";
+    private static final String UPDATES_FILE_PATH = WORK_DIR_VOLUME_MOUNT_PATH + "/updates.json";
+
+    // container configuration
     private static final String INIT_CONTAINER_NAME = "actual";
     private static final String CONTAINER_NAME = "desired";
-    private static final List<String> INIT_CONTAINER_ARGS = List.of("update", "save");
-    private static final List<String> CONTAINER_ARGS = List.of("update", "check");
+    private static final List<String> INIT_CONTAINER_ARGS = List.of("updates", "save", "--output-file", UPDATES_FILE_PATH);
+    private static final List<String> CONTAINER_ARGS = List.of("updates", "check", "--input-file", UPDATES_FILE_PATH);
 
     private static final String PATH = "path";
     // Container fields that require the update job if changed.
@@ -81,8 +88,8 @@ public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentR
         // For test KeycloakDeploymentTest#testDeploymentDurability
         // it uses a pause image, which never ends.
         // After 60 seconds, the job is terminated allowing the test to complete.
-        // TODO should be configurable? 
-        specBuilder.withActiveDeadlineSeconds(60L);
+        // TODO should be configurable?
+        //specBuilder.withActiveDeadlineSeconds(60L);
         specBuilder.endSpec();
         return builder.build();
     }
@@ -123,6 +130,12 @@ public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentR
         builder.withRestartPolicy("Never");
         addInitContainer(builder, context);
         addContainer(builder, context);
+        builder.addNewVolume()
+                .withName(WORK_DIR_VOLUME_NAME)
+                .withNewEmptyDir()
+                .endEmptyDir()
+                .endVolume();
+        builder.withActiveDeadlineSeconds(60L);
         return builder.build();
     }
 
@@ -155,6 +168,11 @@ public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentR
         containerBuilder.withReadinessProbe(null);
         containerBuilder.withLivenessProbe(null);
         containerBuilder.withStartupProbe(null);
+        // add the shared volume
+        containerBuilder.addNewVolumeMount()
+                .withName(WORK_DIR_VOLUME_NAME)
+                .withMountPath(WORK_DIR_VOLUME_MOUNT_PATH)
+                .endVolumeMount();
     }
 
     public static void setOldDeployment(Context<Keycloak> context, StatefulSet oldDeployment) {
@@ -242,14 +260,17 @@ public class KeycloakUpdateJobDependentResource extends CRUDKubernetesDependentR
         switch (containerExitCode.get()) {
             case 0: {
                 decideRollingStrategy(context);
+                return;
             }
             case 1: {
                 Log.error("Container has an unexpected error for Update Job");
                 decideRecreateStrategy(context);
+                return;
             }
             case 2: {
                 Log.fatal("Container has an invalid arguments for Update Job.");
                 decideRecreateStrategy(context);
+                return;
             }
             default: {
                 decideRecreateStrategy(context);

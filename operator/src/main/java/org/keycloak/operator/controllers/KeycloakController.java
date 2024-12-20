@@ -309,7 +309,7 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
         // We only compare containers for environment variables and image.
         // For example, changing the number of replicas/instances must not trigger this logic.
         // Same for updating labels or any volume (volumes are local to the pods)
-        if (!KeycloakUpdateJobDependentResource.requiresUpdateJob(desiredContainer, actualContainer, context)) {
+        if (!KeycloakUpdateJobDependentResource.requiresUpdateJob(actualContainer, desiredContainer, context)) {
             Log.info("No changes detected in containers - skipping update logic.");
             return Optional.empty();
         }

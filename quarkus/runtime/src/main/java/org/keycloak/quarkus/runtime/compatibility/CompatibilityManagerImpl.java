@@ -46,7 +46,7 @@ public class CompatibilityManagerImpl implements CompatibilityManager {
         return this;
     }
 
-    private void addVersions(ServerInfo info) {
+    private static void addVersions(ServerInfo info) {
         info.addVersion("keycloak", Version.VERSION);
         info.addVersion("infinispan", org.infinispan.commons.util.Version.getVersion());
     }
