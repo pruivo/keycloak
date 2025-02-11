@@ -36,6 +36,8 @@ import io.javaoperatorsdk.operator.api.reconciler.EventSourceInitializer;
 import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
 import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.Dependent;
+import io.javaoperatorsdk.operator.processing.dependent.workflow.Workflow;
+import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.Mappers;
@@ -64,10 +66,10 @@ import org.keycloak.operator.upgrade.UpgradeLogicFactory;
 @ControllerConfiguration(
     dependents = {
         @Dependent(type = KeycloakAdminSecretDependentResource.class, reconcilePrecondition = KeycloakAdminSecretDependentResource.EnabledCondition.class),
-        @Dependent(type = KeycloakIngressDependentResource.class, reconcilePrecondition = KeycloakIngressDependentResource.EnabledCondition.class),
-        @Dependent(type = KeycloakServiceDependentResource.class, useEventSourceWithName = "serviceSource"),
+        //@Dependent(type = KeycloakIngressDependentResource.class, reconcilePrecondition = KeycloakIngressDependentResource.EnabledCondition.class),
+        //@Dependent(type = KeycloakServiceDependentResource.class, useEventSourceWithName = "serviceSource"),
         @Dependent(type = KeycloakDiscoveryServiceDependentResource.class, useEventSourceWithName = "serviceSource"),
-        @Dependent(type = KeycloakNetworkPolicyDependentResource.class, reconcilePrecondition = KeycloakNetworkPolicyDependentResource.EnabledCondition.class)
+        //@Dependent(type = KeycloakNetworkPolicyDependentResource.class, reconcilePrecondition = KeycloakNetworkPolicyDependentResource.EnabledCondition.class)
     })
 public class KeycloakController implements Reconciler<Keycloak>, EventSourceInitializer<Keycloak>, ErrorStatusHandler<Keycloak> {
 
@@ -87,6 +89,15 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
 
     volatile KeycloakDeploymentDependentResource deploymentDependentResource;
     volatile KeycloakUpdateJobDependentResource updateJobDependentResource;
+    private final Workflow<Keycloak> workflow;
+
+    public KeycloakController() {
+        workflow = new WorkflowBuilder<Keycloak>()
+                .addDependentResource(new KeycloakIngressDependentResource()).withReconcilePrecondition(new KeycloakIngressDependentResource.EnabledCondition())
+                .addDependentResource(new KeycloakServiceDependentResource())
+                .addDependentResource(new KeycloakNetworkPolicyDependentResource()).withReconcilePrecondition(new KeycloakNetworkPolicyDependentResource.EnabledCondition())
+                .build();
+    }
 
     @Override
     public Map<String, EventSource> prepareEventSources(EventSourceContext<Keycloak> context) {
@@ -151,6 +162,7 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
             return upgradeLogicControl.get();
         }
 
+        workflow.reconcile(kc, context);
         // after the spec has possibly been updated, reconcile the StatefulSet
         this.deploymentDependentResource.reconcile(kc, context);
 

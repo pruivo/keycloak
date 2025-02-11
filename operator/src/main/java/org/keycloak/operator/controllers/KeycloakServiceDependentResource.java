@@ -92,6 +92,8 @@ public class KeycloakServiceDependentResource extends CRUDKubernetesDependentRes
         return service;
     }
 
+
+
     public static String getServiceName(HasMetadata keycloak) {
         return keycloak.getMetadata().getName() + Constants.KEYCLOAK_SERVICE_SUFFIX;
     }
