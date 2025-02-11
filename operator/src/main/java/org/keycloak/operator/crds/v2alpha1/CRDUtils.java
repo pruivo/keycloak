@@ -34,6 +34,8 @@ import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.apps.StatefulSet;
 import io.fabric8.kubernetes.api.model.apps.StatefulSetSpec;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
+import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependentResourceConfig;
+import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependentResourceConfigBuilder;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakSpec;
@@ -115,5 +117,11 @@ public final class CRDUtils {
                 .stream()
                 .flatMap(Collection::stream);
 
+    }
+
+    public static <T> KubernetesDependentResourceConfig<T> defaultLabelsResourceConfig() {
+        return new KubernetesDependentResourceConfigBuilder<T>()
+                .withLabelSelector(Constants.DEFAULT_LABELS_AS_STRING)
+                .build();
     }
 }

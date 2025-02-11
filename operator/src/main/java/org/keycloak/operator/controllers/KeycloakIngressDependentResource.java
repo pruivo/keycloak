@@ -25,10 +25,12 @@ import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernete
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.Condition;
 
+import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
 import io.quarkus.logging.Log;
 import org.jboss.logging.Logger;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
+import org.keycloak.operator.crds.v2alpha1.CRDUtils;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.IngressSpec;
 
@@ -56,6 +58,13 @@ public class KeycloakIngressDependentResource extends CRUDKubernetesDependentRes
 
     public KeycloakIngressDependentResource() {
         super(Ingress.class);
+    }
+
+    public static void addToWorkflow(WorkflowBuilder<Keycloak> builder) {
+        var dr = new KeycloakIngressDependentResource();
+        dr.configureWith(CRDUtils.defaultLabelsResourceConfig());
+        builder.addDependentResource(dr)
+                .withReconcilePrecondition(new EnabledCondition());
     }
 
     public static boolean isIngressEnabled(Keycloak keycloak) {

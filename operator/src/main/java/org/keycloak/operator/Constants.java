@@ -79,4 +79,6 @@ public final class Constants {
     public static final String KEYCLOAK_HTTP_MANAGEMENT_RELATIVE_PATH_KEY = "http-management-relative-path";
 
     public static final String KEYCLOAK_NETWORK_POLICY_SUFFIX = "-network-policy";
+
+    public static final String SERVICE_EVENT_SOURCE_NAME = "serviceSource";
 }

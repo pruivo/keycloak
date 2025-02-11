@@ -31,6 +31,7 @@ import io.javaoperatorsdk.operator.api.reconciler.dependent.DependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.Condition;
+import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
@@ -61,6 +62,13 @@ public class KeycloakNetworkPolicyDependentResource extends CRUDKubernetesDepend
                              Context<Keycloak> context) {
             return NetworkPolicySpec.isNetworkPolicyEnabled(primary);
         }
+    }
+
+    public static void addToWorkflow(WorkflowBuilder<Keycloak> builder) {
+        var dr = new KeycloakNetworkPolicyDependentResource();
+        dr.configureWith(CRDUtils.defaultLabelsResourceConfig());
+        builder.addDependentResource(dr)
+                .withReconcilePrecondition(new EnabledCondition());
     }
 
     @Override

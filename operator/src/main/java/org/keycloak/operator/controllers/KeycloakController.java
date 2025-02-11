@@ -16,6 +16,13 @@
  */
 package org.keycloak.operator.controllers;
 
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+
 import io.fabric8.kubernetes.api.model.ContainerState;
 import io.fabric8.kubernetes.api.model.ContainerStateWaiting;
 import io.fabric8.kubernetes.api.model.ContainerStatus;
@@ -38,38 +45,30 @@ import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.Dependent;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.Workflow;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
+import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowReconcileResult;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.Mappers;
 import io.quarkus.logging.Log;
-
+import jakarta.inject.Inject;
 import org.keycloak.common.util.CollectionUtil;
 import org.keycloak.operator.Config;
-import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatus;
 import org.keycloak.operator.crds.v2alpha1.deployment.KeycloakStatusAggregator;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpecBuilder;
-
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.TimeUnit;
-
-import jakarta.inject.Inject;
 import org.keycloak.operator.upgrade.UpgradeLogicFactory;
+
+import static org.keycloak.operator.Constants.DEFAULT_LABELS_AS_STRING;
+import static org.keycloak.operator.Constants.KEYCLOAK_MIGRATING_ANNOTATION;
+import static org.keycloak.operator.Constants.SERVICE_EVENT_SOURCE_NAME;
 
 @ControllerConfiguration(
     dependents = {
-        @Dependent(type = KeycloakAdminSecretDependentResource.class, reconcilePrecondition = KeycloakAdminSecretDependentResource.EnabledCondition.class),
-        //@Dependent(type = KeycloakIngressDependentResource.class, reconcilePrecondition = KeycloakIngressDependentResource.EnabledCondition.class),
-        //@Dependent(type = KeycloakServiceDependentResource.class, useEventSourceWithName = "serviceSource"),
-        @Dependent(type = KeycloakDiscoveryServiceDependentResource.class, useEventSourceWithName = "serviceSource"),
-        //@Dependent(type = KeycloakNetworkPolicyDependentResource.class, reconcilePrecondition = KeycloakNetworkPolicyDependentResource.EnabledCondition.class)
+            @Dependent(type = KeycloakAdminSecretDependentResource.class, reconcilePrecondition = KeycloakAdminSecretDependentResource.EnabledCondition.class),
+            @Dependent(type = KeycloakDiscoveryServiceDependentResource.class, useEventSourceWithName = SERVICE_EVENT_SOURCE_NAME),
     })
 public class KeycloakController implements Reconciler<Keycloak>, EventSourceInitializer<Keycloak>, ErrorStatusHandler<Keycloak> {
 
@@ -92,11 +91,11 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
     private final Workflow<Keycloak> workflow;
 
     public KeycloakController() {
-        workflow = new WorkflowBuilder<Keycloak>()
-                .addDependentResource(new KeycloakIngressDependentResource()).withReconcilePrecondition(new KeycloakIngressDependentResource.EnabledCondition())
-                .addDependentResource(new KeycloakServiceDependentResource())
-                .addDependentResource(new KeycloakNetworkPolicyDependentResource()).withReconcilePrecondition(new KeycloakNetworkPolicyDependentResource.EnabledCondition())
-                .build();
+        var builder = new WorkflowBuilder<Keycloak>();
+        KeycloakIngressDependentResource.addToWorkflow(builder);
+        KeycloakServiceDependentResource.addToWorkflow(builder);
+        KeycloakNetworkPolicyDependentResource.addToWorkflow(builder);
+        workflow = builder.build();
     }
 
     @Override
@@ -105,14 +104,15 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
 
         InformerConfiguration<Service> servicesIC = InformerConfiguration
                 .from(Service.class)
-                .withLabelSelector(Constants.DEFAULT_LABELS_AS_STRING)
+                .withLabelSelector(DEFAULT_LABELS_AS_STRING)
                 .withNamespaces(namespaces)
                 .withSecondaryToPrimaryMapper(Mappers.fromOwnerReference())
                 .build();
 
         EventSource servicesEvent = new InformerEventSource<>(servicesIC, context);
 
-        Map<String, EventSource> sources = new HashMap<>();
+        var sources = new HashMap<>(EventSourceInitializer.eventSourcesFromWorkflow(context, workflow));
+
         sources.put("serviceSource", servicesEvent);
 
         this.deploymentDependentResource = new KeycloakDeploymentDependentResource(config, watchedResources, distConfigurator);
@@ -162,13 +162,15 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
             return upgradeLogicControl.get();
         }
 
-        workflow.reconcile(kc, context);
+        var workflowResult = workflow.reconcile(kc, context);
+        workflowResult.throwAggregateExceptionIfErrorsPresent();
+
         // after the spec has possibly been updated, reconcile the StatefulSet
         this.deploymentDependentResource.reconcile(kc, context);
 
         var statusAggregator = new KeycloakStatusAggregator(kc.getStatus(), kc.getMetadata().getGeneration());
 
-        updateStatus(kc, context.getSecondaryResource(StatefulSet.class).orElse(null), statusAggregator, context);
+        updateStatus(kc, context.getSecondaryResource(StatefulSet.class).orElse(null), statusAggregator, context, workflowResult);
         var status = statusAggregator.build();
 
         Log.debug("--- Reconciliation finished successfully");
@@ -217,12 +219,16 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
                 .map(i -> Optional.ofNullable(i.getSpec().getAppsDomain()).orElse(i.getSpec().getDomain()));
     }
 
-    public void updateStatus(Keycloak keycloakCR, StatefulSet existingDeployment, KeycloakStatusAggregator status, Context<Keycloak> context) {
+    public void updateStatus(Keycloak keycloakCR, StatefulSet existingDeployment, KeycloakStatusAggregator status, Context<Keycloak> context, WorkflowReconcileResult workflowResult) {
         status.apply(b -> b.withSelector(Utils.toSelectorString(Utils.allInstanceLabels(keycloakCR))));
         validatePodTemplate(keycloakCR, status);
         if (existingDeployment == null) {
             status.addNotReadyMessage("No existing StatefulSet found, waiting for creating a new one");
             return;
+        }
+
+        if (!workflowResult.allDependentResourcesReady()) {
+            status.addNotReadyMessage("%d dependant resource(s) is(are) not ready.".formatted(workflowResult.getNotReadyDependents().size()));
         }
 
         if (existingDeployment.getStatus() == null) {
@@ -236,7 +242,7 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
         }
 
         if (Optional
-                .ofNullable(existingDeployment.getMetadata().getAnnotations().get(Constants.KEYCLOAK_MIGRATING_ANNOTATION))
+                .ofNullable(existingDeployment.getMetadata().getAnnotations().get(KEYCLOAK_MIGRATING_ANNOTATION))
                 .map(Boolean::valueOf).orElse(false)) {
             status.addNotReadyMessage("Performing Keycloak upgrade, scaling down the deployment");
         } else if (existingDeployment.getStatus() != null

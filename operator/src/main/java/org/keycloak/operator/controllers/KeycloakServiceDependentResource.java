@@ -27,12 +27,15 @@ import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.ResourceDiscriminator;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
+import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
+import org.keycloak.operator.crds.v2alpha1.CRDUtils;
 import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HttpManagementSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HttpSpec;
 
+import static org.keycloak.operator.Constants.SERVICE_EVENT_SOURCE_NAME;
 import static org.keycloak.operator.crds.v2alpha1.CRDUtils.isTlsConfigured;
 
 @KubernetesDependent(labelSelector = Constants.DEFAULT_LABELS_AS_STRING, resourceDiscriminator = KeycloakServiceDependentResource.NameResourceDiscriminator.class)
@@ -47,6 +50,14 @@ public class KeycloakServiceDependentResource extends CRUDKubernetesDependentRes
 
     public KeycloakServiceDependentResource() {
         super(Service.class);
+    }
+
+    public static void addToWorkflow(WorkflowBuilder<Keycloak> builder) {
+        var dr = new KeycloakServiceDependentResource();
+        dr.useEventSourceWithName(SERVICE_EVENT_SOURCE_NAME);
+        dr.setResourceDiscriminator(new NameResourceDiscriminator());
+        dr.configureWith(CRDUtils.defaultLabelsResourceConfig());
+        builder.addDependentResource(dr);
     }
 
     private ServiceSpec getServiceSpec(Keycloak keycloak) {
@@ -81,7 +92,7 @@ public class KeycloakServiceDependentResource extends CRUDKubernetesDependentRes
 
     @Override
     protected Service desired(Keycloak primary, Context<Keycloak> context) {
-        Service service = new ServiceBuilder()
+        return new ServiceBuilder()
                 .withNewMetadata()
                 .withName(getServiceName(primary))
                 .withNamespace(primary.getMetadata().getNamespace())
@@ -89,10 +100,7 @@ public class KeycloakServiceDependentResource extends CRUDKubernetesDependentRes
                 .endMetadata()
                 .withSpec(getServiceSpec(primary))
                 .build();
-        return service;
     }
-
-
 
     public static String getServiceName(HasMetadata keycloak) {
         return keycloak.getMetadata().getName() + Constants.KEYCLOAK_SERVICE_SUFFIX;
