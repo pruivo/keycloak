@@ -26,7 +26,6 @@ import io.fabric8.kubernetes.api.model.ServiceSpecBuilder;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.ResourceDiscriminator;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
-import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.WorkflowBuilder;
 import org.keycloak.operator.Constants;
 import org.keycloak.operator.Utils;
@@ -35,10 +34,8 @@ import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HttpManagementSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HttpSpec;
 
-import static org.keycloak.operator.Constants.SERVICE_EVENT_SOURCE_NAME;
 import static org.keycloak.operator.crds.v2alpha1.CRDUtils.isTlsConfigured;
 
-@KubernetesDependent(labelSelector = Constants.DEFAULT_LABELS_AS_STRING, resourceDiscriminator = KeycloakServiceDependentResource.NameResourceDiscriminator.class)
 public class KeycloakServiceDependentResource extends CRUDKubernetesDependentResource<Service, Keycloak> {
 
     public static class NameResourceDiscriminator implements ResourceDiscriminator<Service, Keycloak> {
@@ -54,7 +51,6 @@ public class KeycloakServiceDependentResource extends CRUDKubernetesDependentRes
 
     public static void addToWorkflow(WorkflowBuilder<Keycloak> builder) {
         var dr = new KeycloakServiceDependentResource();
-        dr.useEventSourceWithName(SERVICE_EVENT_SOURCE_NAME);
         dr.setResourceDiscriminator(new NameResourceDiscriminator());
         dr.configureWith(CRDUtils.defaultLabelsResourceConfig());
         builder.addDependentResource(dr);

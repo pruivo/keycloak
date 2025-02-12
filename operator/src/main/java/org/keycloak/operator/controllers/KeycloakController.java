@@ -109,9 +109,17 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
                 .withSecondaryToPrimaryMapper(Mappers.fromOwnerReference())
                 .build();
 
-        EventSource servicesEvent = new InformerEventSource<>(servicesIC, context);
+        var servicesEvent = new InformerEventSource<>(servicesIC, context);
 
         var sources = new HashMap<>(EventSourceInitializer.eventSourcesFromWorkflow(context, workflow));
+        workflow.getDependentResourcesByNameWithoutActivationCondition().forEach((s, dependentResource) -> {
+            // we want the KeycloakServiceDependentResource to use the same event source (serviceSource)
+            if (dependentResource instanceof KeycloakServiceDependentResource) {
+                sources.remove(s);
+                ((KeycloakServiceDependentResource) dependentResource).configureWith(servicesEvent);
+            }
+        });
+
 
         sources.put("serviceSource", servicesEvent);
 
@@ -162,6 +170,7 @@ public class KeycloakController implements Reconciler<Keycloak>, EventSourceInit
             return upgradeLogicControl.get();
         }
 
+        // only service and ingress, we can reconcile these with the StatefulSet in parallel.
         var workflowResult = workflow.reconcile(kc, context);
         workflowResult.throwAggregateExceptionIfErrorsPresent();
 
