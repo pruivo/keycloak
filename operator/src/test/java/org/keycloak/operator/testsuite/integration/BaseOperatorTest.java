@@ -289,6 +289,11 @@ public class BaseOperatorTest implements QuarkusTestAfterEachCallback {
                   .statefulSets()
                   .inNamespace(namespace)
                   .withLabels(Constants.DEFAULT_LABELS).informOnCondition(List::isEmpty).get(20, TimeUnit.SECONDS);
+          k8sclient.resources(Keycloak.class)
+                  .inNamespace(namespace)
+                  .withLabels(Constants.DEFAULT_LABELS)
+                  .informOnCondition(List::isEmpty)
+                  .get(20, TimeUnit.SECONDS);
       } catch (Exception e) {
           throw KubernetesClientException.launderThrowable(e);
       }
