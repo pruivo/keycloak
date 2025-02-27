@@ -292,7 +292,7 @@ public final class CRAssert {
         return client.resource(keycloak).informOnCondition(kcs -> {
             try {
                 assertKeycloakStatusCondition(kcs.get(0), KeycloakStatusCondition.ROLLING_UPDATE, true, "Rolling out deployment update");
-                assertKeycloakStatusCondition(current, KeycloakStatusCondition.UPDATE_TYPE, false, reason);
+                assertKeycloakStatusCondition(kcs.get(0), KeycloakStatusCondition.UPDATE_TYPE, false, reason);
                 return true;
             } catch (AssertionError e) {
                 return false;
