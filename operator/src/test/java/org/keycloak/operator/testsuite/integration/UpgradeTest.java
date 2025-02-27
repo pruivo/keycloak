@@ -192,7 +192,7 @@ public class UpgradeTest extends BaseOperatorTest {
 
     private CompletableFuture<List<Keycloak>> assertUnknownUpdateTypeStatus(Keycloak keycloak) {
         return k8sclient.resource(keycloak).informOnCondition(kcs -> {
-            if (kcs.isEmpty()) {
+            if (kcs.isEmpty() || kcs.get(0).getStatus() == null) {
                 return false;
             }
             try {
