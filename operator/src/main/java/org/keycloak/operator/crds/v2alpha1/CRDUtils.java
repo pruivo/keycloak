@@ -116,4 +116,13 @@ public final class CRDUtils {
                 .flatMap(Collection::stream);
 
     }
+
+    public static Optional<Boolean> fetchIsRecreateUpdate(StatefulSet statefulSet) {
+        var value = statefulSet.getMetadata().getAnnotations().get(Constants.KEYCLOAK_RECREATE_UPDATE_ANNOTATION);
+        return Optional.ofNullable(value).map(Boolean::parseBoolean);
+    }
+
+    public static Optional<String> findUpdateReason(StatefulSet statefulSet) {
+        return Optional.ofNullable(statefulSet.getMetadata().getAnnotations().get(Constants.KEYCLOAK_UPDATE_REASON_ANNOTATION));
+    }
 }
