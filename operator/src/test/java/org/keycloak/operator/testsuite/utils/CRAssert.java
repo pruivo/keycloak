@@ -288,10 +288,11 @@ public final class CRAssert {
                 .findFirst();
     }
 
-    public static CompletableFuture<List<Keycloak>> eventuallyRollingUpgradeStatus(KubernetesClient client, Keycloak keycloak) {
+    public static CompletableFuture<List<Keycloak>> eventuallyRollingUpgradeStatus(KubernetesClient client, Keycloak keycloak, String reason) {
         return client.resource(keycloak).informOnCondition(kcs -> {
             try {
                 assertKeycloakStatusCondition(kcs.get(0), KeycloakStatusCondition.ROLLING_UPDATE, true, "Rolling out deployment update");
+                assertKeycloakStatusCondition(current, KeycloakStatusCondition.UPDATE_TYPE, false, reason);
                 return true;
             } catch (AssertionError e) {
                 return false;
@@ -299,14 +300,16 @@ public final class CRAssert {
         });
     }
 
-    public static CompletableFuture<List<Keycloak>> eventuallyRecreateUpgradeStatus(KubernetesClient client, Keycloak keycloak) {
+    public static CompletableFuture<List<Keycloak>> eventuallyRecreateUpgradeStatus(KubernetesClient client, Keycloak keycloak, String reason) {
         return client.resource(keycloak).informOnCondition(kcs -> {
             try {
                 assertKeycloakStatusCondition(kcs.get(0), KeycloakStatusCondition.READY, false, "Performing Keycloak upgrade");
+                assertKeycloakStatusCondition(kcs.get(0), KeycloakStatusCondition.UPDATE_TYPE, true, reason);
                 return true;
             } catch (AssertionError e) {
                 return false;
             }
         });
     }
+
 }
