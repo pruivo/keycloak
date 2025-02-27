@@ -17,6 +17,7 @@
 
 package org.keycloak.operator.crds.v2alpha1.deployment;
 
+import io.quarkus.logging.Log;
 import org.keycloak.operator.Utils;
 
 import java.util.ArrayList;
@@ -104,6 +105,7 @@ public class KeycloakStatusAggregator {
     }
 
     public void addUpgradeType(boolean recreate, String message) {
+        Log.infof("SET STATUS %s and %s", recreate, message);
         updateType.setStatus(recreate);
         updateType.setObservedGeneration(observedGeneration);
         updateType.setMessage(message);
