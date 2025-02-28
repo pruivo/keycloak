@@ -159,8 +159,8 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
         }
 
         return switch (upgradeType.get()) {
-            case ROLLING -> handleRollingUpdate(baseDeployment, ContextUtils.getUpgradeReason(context));
-            case RECREATE -> handleRecreateUpdate(existingDeployment, baseDeployment, ContextUtils.getUpgradeReason(context));
+            case ROLLING -> handleRollingUpdate(baseDeployment);
+            case RECREATE -> handleRecreateUpdate(existingDeployment, baseDeployment);
         };
     }
 
@@ -542,18 +542,13 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
         }));
     }
 
-    private static StatefulSet handleRollingUpdate(StatefulSet desired, String upgradeReason) {
+    private static StatefulSet handleRollingUpdate(StatefulSet desired) {
         // return the desired stateful set since Kubernetes does a rolling in-place upgrade by default.
         Log.debug("Performing a rolling upgrade");
-        var builder = desired.toBuilder()
-                .editMetadata()
-                .addToAnnotations(Constants.KEYCLOAK_RECREATE_UPDATE_ANNOTATION, "false")
-                .addToAnnotations(Constants.KEYCLOAK_UPDATE_REASON_ANNOTATION, upgradeReason)
-                .endMetadata();
-        return builder.build();
+        return desired;
     }
 
-    private static StatefulSet  handleRecreateUpdate(StatefulSet actual, StatefulSet desired, String upgradeReason) {
+    private static StatefulSet  handleRecreateUpdate(StatefulSet actual, StatefulSet desired) {
         if (actual.getStatus().getReplicas() == 0) {
             Log.debug("Performing a recreate upgrade - scaling up the stateful set");
             return desired;
@@ -568,8 +563,6 @@ public class KeycloakDeploymentDependentResource extends CRUDKubernetesDependent
         builder.withMetadata(desired.getMetadata());
         builder.editMetadata()
                 .addToAnnotations(Constants.KEYCLOAK_MIGRATING_ANNOTATION, Boolean.TRUE.toString())
-                .addToAnnotations(Constants.KEYCLOAK_RECREATE_UPDATE_ANNOTATION, Boolean.TRUE.toString())
-                .addToAnnotations(Constants.KEYCLOAK_UPDATE_REASON_ANNOTATION, upgradeReason)
                 .endMetadata();
         return builder.build();
     }
