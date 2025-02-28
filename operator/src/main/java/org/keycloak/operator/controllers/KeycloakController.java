@@ -93,7 +93,8 @@ public class KeycloakController implements Reconciler<Keycloak> {
         String kcName = kc.getMetadata().getName();
         String namespace = kc.getMetadata().getNamespace();
 
-        Log.debugf("--- Reconciling Keycloak: %s in namespace: %s", kcName, namespace);
+        Log.infof("--- Reconciling Keycloak: %s in namespace: %s", kcName, namespace);
+        Log.infof("Is marked for delete? %s", kc.isMarkedForDeletion());
 
         // TODO - these modifications to the resource may belong in a webhook because dependents run first
         // only the statefulset is deferred until after
@@ -134,6 +135,8 @@ public class KeycloakController implements Reconciler<Keycloak> {
         ContextUtils.storeCurrentStatefulSet(context, existingDeployment);
         ContextUtils.storeDesiredStatefulSet(context, new KeycloakDeploymentDependentResource().desired(kc, context));
 
+        Log.infof("Is stateful set marked for delete? %s", existingDeployment != null && existingDeployment.isMarkedForDeletion());
+
         var upgradeLogic = upgradeLogicFactory.create(kc, context);
         var upgradeLogicControl = upgradeLogic.decideUpgrade();
         if (upgradeLogicControl.isPresent()) {
@@ -141,12 +144,12 @@ public class KeycloakController implements Reconciler<Keycloak> {
             return upgradeLogicControl.get();
         }
 
-        Log.info(" --- before reconcileManagedWorkflow");
+        Log.info(" --- before reconcileManagedWorkflow()");
 
         // after the spec has possibly been updated, reconcile the StatefulSet
         context.managedWorkflowAndDependentResourceContext().reconcileManagedWorkflow();
 
-        Log.info(" --- after reconcileManagedWorkflow");
+        Log.info(" --- after reconcileManagedWorkflow()");
 
         var statusAggregator = new KeycloakStatusAggregator(kc.getStatus(), kc.getMetadata().getGeneration());
 
