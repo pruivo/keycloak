@@ -190,7 +190,7 @@ public class UpgradeTest extends BaseOperatorTest {
         return maybeExitCode.get();
     }
 
-    private CompletableFuture<List<Keycloak>> assertUnknownUpdateTypeStatus(Keycloak keycloak) {
+    private CompletableFuture<Void> assertUnknownUpdateTypeStatus(Keycloak keycloak) {
         return k8sclient.resource(keycloak).informOnCondition(kcs -> {
             if (kcs.isEmpty() || kcs.get(0).getStatus() == null) {
                 return false;
@@ -201,7 +201,7 @@ public class UpgradeTest extends BaseOperatorTest {
             } catch (AssertionError e) {
                 return false;
             }
-        });
+        }).thenAccept(unused -> {});
     }
 
     private static Keycloak createInitialDeployment(UpdateStrategy updateStrategy) {
