@@ -20,6 +20,7 @@ package org.keycloak.operator.upgrade.impl;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -47,6 +48,7 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     protected final Context<Keycloak> context;
     protected final Keycloak keycloak;
+    private Consumer<KeycloakStatusAggregator> statusConsumer = unused -> {};
 
     BaseUpgradeLogic(Context<Keycloak> context, Keycloak keycloak) {
         this.context = context;
@@ -76,20 +78,7 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     @Override
     public final void updateStatus(KeycloakStatusAggregator statusAggregator) {
-        var maybeType = ContextUtils.getUpgradeType(context);
-        if (maybeType.isPresent()) {
-            statusAggregator.addUpgradeType(maybeType.get() == UpgradeType.RECREATE, ContextUtils.getUpgradeReason(context));
-            return;
-        }
-        var current= ContextUtils.getCurrentStatefulSet(context);
-        if (current.isEmpty()) {
-            return;
-        }
-        var maybeRecreate = CRDUtils.fetchIsRecreateUpdate(current.get());
-        if (maybeRecreate.isEmpty()) {
-            return;
-        }
-        statusAggregator.addUpgradeType(maybeRecreate.get(), CRDUtils.findUpdateReason(current.get()).orElseThrow());
+        statusConsumer.accept(statusAggregator);
     }
 
     /**
@@ -109,12 +98,14 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     void decideRollingUpgrade(String reason) {
         Log.debugf("Decided rolling upgrade type. Reason: %s", reason);
-        ContextUtils.storeUpgradeType(context, UpgradeType.ROLLING, reason);
+        statusConsumer = status -> status.addUpgradeType(false, reason);
+        ContextUtils.storeUpgradeType(context, UpgradeType.ROLLING);
     }
 
     void decideRecreateUpgrade(String reason) {
         Log.debugf("Decided recreate upgrade type. Reason: %s", reason);
-        ContextUtils.storeUpgradeType(context, UpgradeType.RECREATE, reason);
+        statusConsumer = status -> status.addUpgradeType(true, reason);
+        ContextUtils.storeUpgradeType(context, UpgradeType.RECREATE);
     }
 
     static IllegalStateException containerNotFound() {

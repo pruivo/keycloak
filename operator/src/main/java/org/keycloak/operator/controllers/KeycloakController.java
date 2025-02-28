@@ -95,6 +95,7 @@ public class KeycloakController implements Reconciler<Keycloak> {
 
         Log.infof("--- Reconciling Keycloak: %s in namespace: %s", kcName, namespace);
         Log.infof("Is marked for delete? %s", kc.isMarkedForDeletion());
+        context.getRetryInfo().ifPresent(retryInfo -> Log.infof("Retry: %s (last? %s)", retryInfo.getAttemptCount(), retryInfo.isLastAttempt()));
 
         // TODO - these modifications to the resource may belong in a webhook because dependents run first
         // only the statefulset is deferred until after
@@ -160,6 +161,7 @@ public class KeycloakController implements Reconciler<Keycloak> {
         Log.info("--- Reconciliation finished successfully");
 
         UpdateControl<Keycloak> updateControl;
+        Log.infof("Status: %s%n%s", Serialization.asYaml(kc.getStatus()), Serialization.asYaml(status));
         if (status.equals(kc.getStatus())) {
             updateControl = UpdateControl.noUpdate();
         }

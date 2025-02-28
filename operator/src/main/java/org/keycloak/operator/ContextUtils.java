@@ -31,7 +31,6 @@ public final class ContextUtils {
     public static final String OLD_DEPLOYMENT_KEY = "current_stateful_set";
     public static final String NEW_DEPLOYMENT_KEY = "desired_new_stateful_set";
     public static final String UPGRADE_TYPE_KEY = "upgrade_type";
-    public static final String UPGRADE_REASON_KEY = "upgrade_reason";
     public static final String OPERATOR_CONFIG_KEY = "operator_config";
     public static final String WATCHED_RESOURCES_KEY = "watched_resources";
     public static final String DIST_CONFIGURATOR_KEY = "dist_configurator";
@@ -55,17 +54,12 @@ public final class ContextUtils {
         return context.managedWorkflowAndDependentResourceContext().getMandatory(NEW_DEPLOYMENT_KEY, StatefulSet.class);
     }
 
-    public static void storeUpgradeType(Context<?> context, UpgradeType upgradeType, String reason) {
+    public static void storeUpgradeType(Context<?> context, UpgradeType upgradeType) {
         context.managedWorkflowAndDependentResourceContext().put(UPGRADE_TYPE_KEY, upgradeType);
-        context.managedWorkflowAndDependentResourceContext().put(UPGRADE_REASON_KEY, reason);
     }
 
     public static Optional<UpgradeType> getUpgradeType(Context<?> context) {
         return context.managedWorkflowAndDependentResourceContext().get(UPGRADE_TYPE_KEY, UpgradeType.class);
-    }
-
-    public static String getUpgradeReason(Context<?> context) {
-        return context.managedWorkflowAndDependentResourceContext().getMandatory(UPGRADE_REASON_KEY, String.class);
     }
 
     public static void storeOperatorConfig(Context<?> context, Config operatorConfig) {
