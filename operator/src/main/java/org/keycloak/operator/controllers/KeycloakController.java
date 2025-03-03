@@ -96,6 +96,7 @@ public class KeycloakController implements Reconciler<Keycloak> {
         Log.infof("--- Reconciling Keycloak: %s in namespace: %s", kcName, namespace);
         Log.infof("Is marked for delete? %s", kc.isMarkedForDeletion());
         context.getRetryInfo().ifPresent(retryInfo -> Log.infof("Retry: %s (last? %s)", retryInfo.getAttemptCount(), retryInfo.isLastAttempt()));
+        Log.infof("Keycloak CR:%n%s", Serialization.asYaml(kc));
 
         // TODO - these modifications to the resource may belong in a webhook because dependents run first
         // only the statefulset is deferred until after
@@ -130,6 +131,9 @@ public class KeycloakController implements Reconciler<Keycloak> {
         }
 
         var existingDeployment = context.getSecondaryResource(StatefulSet.class).orElse(null);
+        if (existingDeployment != null) {
+            Log.infof("StatefulSet:%n%s", Serialization.asYaml(existingDeployment));
+        }
         ContextUtils.storeOperatorConfig(context, config);
         ContextUtils.storeWatchedResources(context, watchedResources);
         ContextUtils.storeDistConfigurator(context, distConfigurator);
