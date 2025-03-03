@@ -63,6 +63,10 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
             Log.debug("New deployment - skipping upgrade logic");
             return Optional.empty();
         }
+        if (Objects.equals(1L, keycloak.getMetadata().getGeneration())) {
+            Log.debug("First generation - skipping upgrade logic");
+            return Optional.empty();
+        }
         var desiredStatefulSet = ContextUtils.getDesiredStatefulSet(context);
         var desiredContainer = CRDUtils.firstContainerOf(desiredStatefulSet).orElseThrow(BaseUpgradeLogic::containerNotFound);
         var actualContainer = CRDUtils.firstContainerOf(existing.get()).orElseThrow(BaseUpgradeLogic::containerNotFound);

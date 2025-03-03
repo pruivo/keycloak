@@ -54,7 +54,6 @@ import static org.keycloak.operator.testsuite.utils.CRAssert.eventuallyRollingUp
 import static org.keycloak.operator.testsuite.utils.K8sUtils.deployKeycloak;
 
 @QuarkusTest
-@Disabled(value = "unstable")
 public class UpgradeTest extends BaseOperatorTest {
 
     @ParameterizedTest(name = "testImageChange-{0}")
@@ -68,7 +67,8 @@ public class UpgradeTest extends BaseOperatorTest {
         final String newImage = "quay.io/keycloak/non-existing-keycloak";
 
         // changing the image to non-existing will always use the recreate upgrade type.
-        kc.getSpec().setImage(newImage);
+        kc.getSpec().setImage("quay.io/keycloak/non-existing-keycloak");
+        disableProbes(kc);
         var upgradeCondition = eventuallyRecreateUpgradeStatus(k8sclient, kc);
 
         deployKeycloak(k8sclient, kc, false);
@@ -202,6 +202,7 @@ public class UpgradeTest extends BaseOperatorTest {
         upgradeCondition = eventuallyRecreateUpgradeStatus(k8sclient, kc);
         // enough to crash the Pod and return exit code != 0
         kc.getSpec().setImage("quay.io/keycloak/non-existing-keycloak");
+        disableProbes(kc);
 
         deployKeycloak(k8sclient, kc, false);
         await(upgradeCondition);
@@ -250,11 +251,8 @@ public class UpgradeTest extends BaseOperatorTest {
     }
 
     private static Keycloak createInitialDeployment(UpdateStrategy updateStrategy) {
-        var kc = getTestKeycloakDeployment(true);
+        var kc = getTestKeycloakDeployment(false);
         kc.getSpec().setInstances(3);
-        if (updateStrategy == null) {
-            return kc;
-        }
         var updateSpec = new UpdateSpec();
         updateSpec.setStrategy(updateStrategy);
         kc.getSpec().setUpdateSpec(updateSpec);
