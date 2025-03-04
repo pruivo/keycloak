@@ -17,6 +17,8 @@
 
 package org.keycloak.operator.upgrade.impl;
 
+import io.fabric8.kubernetes.api.model.ObjectMeta;
+import io.fabric8.kubernetes.client.CustomResource;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -78,7 +80,10 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     @Override
     public final void updateStatus(KeycloakStatusAggregator statusAggregator) {
-        statusConsumer.accept(statusAggregator);
+        if (generation() > 1) {
+            // only update status when the generation is higher than one
+            statusConsumer.accept(statusAggregator);
+        }
     }
 
     /**
@@ -145,5 +150,12 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
             Log.debugf("Found difference in container's %s:%nactual:%s%ndesired:%s", key, actual, desired);
         }
         return isEquals;
+    }
+
+    private long generation() {
+        return Optional.of(keycloak)
+                .map(CustomResource::getMetadata)
+                .map(ObjectMeta::getGeneration)
+                .orElse(1L);
     }
 }
