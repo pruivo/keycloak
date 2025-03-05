@@ -17,21 +17,18 @@
 
 package org.keycloak.operator.upgrade.impl;
 
-import io.fabric8.kubernetes.api.model.ObjectMeta;
-import io.fabric8.kubernetes.client.CustomResource;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVar;
 import io.fabric8.kubernetes.api.model.apps.StatefulSet;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import io.quarkus.logging.Log;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.keycloak.operator.ContextUtils;
 import org.keycloak.operator.controllers.KeycloakDeploymentDependentResource;
 import org.keycloak.operator.crds.v2alpha1.CRDUtils;
@@ -50,7 +47,7 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     protected final Context<Keycloak> context;
     protected final Keycloak keycloak;
-    private Consumer<KeycloakStatusAggregator> statusConsumer = unused -> {};
+    private Consumer<KeycloakStatusAggregator> statusConsumer = KeycloakStatusAggregator::resetUpgradeType;
 
     BaseUpgradeLogic(Context<Keycloak> context, Keycloak keycloak) {
         this.context = context;
@@ -65,6 +62,8 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
             Log.debug("New deployment - skipping upgrade logic");
             return Optional.empty();
         }
+        copyStatusFromExistStatefulSet(existing.get());
+
         var desiredStatefulSet = ContextUtils.getDesiredStatefulSet(context);
         var desiredContainer = CRDUtils.firstContainerOf(desiredStatefulSet).orElseThrow(BaseUpgradeLogic::containerNotFound);
         var actualContainer = CRDUtils.firstContainerOf(existing.get()).orElseThrow(BaseUpgradeLogic::containerNotFound);
@@ -80,10 +79,7 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
 
     @Override
     public final void updateStatus(KeycloakStatusAggregator statusAggregator) {
-        if (generation() > 1) {
-            // only update status when the generation is higher than one
-            statusConsumer.accept(statusAggregator);
-        }
+        statusConsumer.accept(statusAggregator);
     }
 
     /**
@@ -101,16 +97,26 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
      */
     abstract Optional<UpdateControl<Keycloak>> onUpgrade();
 
+    private void copyStatusFromExistStatefulSet(StatefulSet current) {
+        var maybeRecreate = CRDUtils.fetchIsRecreateUpdate(current);
+        if (maybeRecreate.isEmpty()) {
+            return;
+        }
+        var reason = CRDUtils.findUpdateReason(current).orElseThrow();
+        var recreate = maybeRecreate.get();
+        statusConsumer = statusAggregator -> statusAggregator.addUpgradeType(recreate, reason);
+    }
+
     void decideRollingUpgrade(String reason) {
         Log.debugf("Decided rolling upgrade type. Reason: %s", reason);
         statusConsumer = status -> status.addUpgradeType(false, reason);
-        ContextUtils.storeUpgradeType(context, UpgradeType.ROLLING);
+        ContextUtils.storeUpgradeType(context, UpgradeType.ROLLING, reason);
     }
 
     void decideRecreateUpgrade(String reason) {
         Log.debugf("Decided recreate upgrade type. Reason: %s", reason);
         statusConsumer = status -> status.addUpgradeType(true, reason);
-        ContextUtils.storeUpgradeType(context, UpgradeType.RECREATE);
+        ContextUtils.storeUpgradeType(context, UpgradeType.RECREATE, reason);
     }
 
     static IllegalStateException containerNotFound() {
@@ -150,12 +156,5 @@ abstract class BaseUpgradeLogic implements UpgradeLogic {
             Log.debugf("Found difference in container's %s:%nactual:%s%ndesired:%s", key, actual, desired);
         }
         return isEquals;
-    }
-
-    private long generation() {
-        return Optional.of(keycloak)
-                .map(CustomResource::getMetadata)
-                .map(ObjectMeta::getGeneration)
-                .orElse(1L);
     }
 }

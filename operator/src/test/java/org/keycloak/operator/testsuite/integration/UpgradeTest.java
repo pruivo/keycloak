@@ -63,6 +63,7 @@ public class UpgradeTest extends BaseOperatorTest {
 
         // changing the image to non-existing will always use the recreate upgrade type.
         kc.getSpec().setImage("quay.io/keycloak/non-existing-keycloak");
+        disableProbes(kc);
         upgradeCondition = switch (updateStrategy) {
             case AUTO -> eventuallyRecreateUpgradeStatus(k8sclient, kc, "Unexpected update-compatibility command");
             case RECREATE_ON_IMAGE_CHANGE -> eventuallyRecreateUpgradeStatus(k8sclient, kc, "Image changed");
@@ -155,6 +156,7 @@ public class UpgradeTest extends BaseOperatorTest {
         upgradeCondition = eventuallyRecreateUpgradeStatus(k8sclient, kc, "Unexpected update-compatibility command");
         // enough to crash the Pod and return exit code != 0
         kc.getSpec().setImage("quay.io/keycloak/non-existing-keycloak");
+        disableProbes(kc);
 
         deployKeycloak(k8sclient, kc, false);
         await(upgradeCondition);
@@ -201,11 +203,8 @@ public class UpgradeTest extends BaseOperatorTest {
     }
 
     private static Keycloak createInitialDeployment(UpdateStrategy updateStrategy) {
-        var kc = getTestKeycloakDeployment(true);
-        kc.getSpec().setInstances(3);
-        if (updateStrategy == null) {
-            return kc;
-        }
+        var kc = getTestKeycloakDeployment(false);
+        kc.getSpec().setInstances(2);
         var updateSpec = new UpdateSpec();
         updateSpec.setStrategy(updateStrategy);
         kc.getSpec().setUpdateSpec(updateSpec);
