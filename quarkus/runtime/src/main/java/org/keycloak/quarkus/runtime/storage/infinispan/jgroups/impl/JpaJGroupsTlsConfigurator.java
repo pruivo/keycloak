@@ -54,7 +54,7 @@ public class JpaJGroupsTlsConfigurator extends BaseJGroupsTlsConfigurator {
     private static final String TLS_PROTOCOL_VERSION = "TLSv1.3";
     private static final String TLS_PROTOCOL = "TLS";
     private static final int STARTUP_RETRIES = 5;
-    private static final int STARTUP_RETRY_SLEEP_MILLIS = 128;
+    private static final int STARTUP_RETRY_SLEEP_MILLIS = 500;
     public static final JpaJGroupsTlsConfigurator INSTANCE = new JpaJGroupsTlsConfigurator();
 
     @Override
