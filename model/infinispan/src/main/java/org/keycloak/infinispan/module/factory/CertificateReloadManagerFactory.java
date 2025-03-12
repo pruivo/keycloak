@@ -5,6 +5,7 @@ import org.infinispan.factories.AutoInstantiableFactory;
 import org.infinispan.factories.annotations.DefaultFactoryFor;
 import org.keycloak.infinispan.module.certificates.CertificateReloadManager;
 import org.keycloak.infinispan.module.configuration.global.KeycloakConfiguration;
+import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 
 @DefaultFactoryFor(classes = CertificateReloadManager.class)
 public class CertificateReloadManagerFactory extends AbstractComponentFactory implements AutoInstantiableFactory {
@@ -16,10 +17,12 @@ public class CertificateReloadManagerFactory extends AbstractComponentFactory im
             return null;
         }
         var sessionFactory = kcConfig.keycloakSessionFactory();
-        var certificateHolder = kcConfig.jGroupsCertificateHolder();
-        if (sessionFactory == null || certificateHolder == null) {
-            throw new IllegalStateException("KeycloakConfiguration is not null when the certificate reload is required.");
+        try (var session = sessionFactory.create()) {
+            var provider = session.getProvider(JGroupsCertificateProvider.class);
+            if (provider.isEnabled() && provider.supportsReloadAndRotation()) {
+                return new CertificateReloadManager(sessionFactory);
+            }
         }
-        return new CertificateReloadManager(sessionFactory, certificateHolder, kcConfig.jgroupsCertificateRotation());
+        return null;
     }
 }

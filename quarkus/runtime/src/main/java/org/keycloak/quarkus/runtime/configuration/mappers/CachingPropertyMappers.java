@@ -61,6 +61,7 @@ final class CachingPropertyMappers {
                         .paramLabel("file")
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED)
+                        .to("kc.spi-jgroups-mtls-enabled")
                         .isEnabled(CachingPropertyMappers::getDefaultMtlsEnabled, "a TCP based cache-stack is used")
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE.withRuntimeSpecificDefault(getDefaultKeystorePathValue()))
@@ -87,6 +88,7 @@ final class CachingPropertyMappers {
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_ROTATION)
                         .paramLabel("days")
+                        .to("kc.spi-jgroups-mtls-jpa-rotation")
                         .isEnabled(() -> Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED), "property '%s' is enabled".formatted(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED.getKey()))
                         .validator(CachingPropertyMappers::validateCertificateRotationIsPositive)
                         .build(),

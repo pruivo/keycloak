@@ -16,3 +16,6 @@
 #
 
 org.keycloak.connections.infinispan.InfinispanConnectionSpi
+org.keycloak.spi.infinispan.JGroupsCertificateProviderSpi
+org.keycloak.spi.infinispan.CacheEmbeddedConfigProviderSpi
+org.keycloak.spi.infinispan.CacheRemoteConfigProviderSpi

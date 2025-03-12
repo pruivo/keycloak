@@ -16,7 +16,7 @@ import javax.net.ssl.X509ExtendedKeyManager;
 /**
  * A {@link X509ExtendedKeyManager} implementation that allows to update the keys and certificates at runtime.
  */
-class ReloadingX509ExtendedKeyManager extends X509ExtendedKeyManager {
+public class ReloadingX509ExtendedKeyManager extends X509ExtendedKeyManager {
 
     private static final Logger logger = Logger.getLogger(MethodHandles.lookup().lookupClass());
     private volatile X509ExtendedKeyManager delegate;

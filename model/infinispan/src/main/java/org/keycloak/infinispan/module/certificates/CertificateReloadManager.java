@@ -1,14 +1,11 @@
 package org.keycloak.infinispan.module.certificates;
 
-import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.math.BigInteger;
-import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -34,11 +31,10 @@ import org.infinispan.util.concurrent.BlockingManager;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.CertificateUtils;
 import org.keycloak.common.util.KeyUtils;
-import org.keycloak.common.util.Time;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.storage.configuration.ServerConfigStorageProvider;
+import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 
 import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.toJson;
 
@@ -69,8 +65,6 @@ public class CertificateReloadManager implements Lifecycle {
     private static final Duration BOOT_PERIOD = Duration.ofMillis(200);
 
     private final KeycloakSessionFactory sessionFactory;
-    private final JGroupsCertificateHolder certificateHolder;
-    private volatile long rotationSeconds;
     private final AutoCloseableLock lock;
     private ScheduledFuture<?> scheduledFuture;
     private ScheduledFuture<?> bootFuture;
@@ -88,10 +82,8 @@ public class CertificateReloadManager implements Lifecycle {
     @Inject
     BlockingManager blockingManager;
 
-    public CertificateReloadManager(KeycloakSessionFactory sessionFactory, JGroupsCertificateHolder certificateHolder, int rotationDays) {
+    public CertificateReloadManager(KeycloakSessionFactory sessionFactory) {
         this.sessionFactory = sessionFactory;
-        this.certificateHolder = certificateHolder;
-        this.rotationSeconds = TimeUnit.DAYS.toSeconds(rotationDays);
         lock = new AutoCloseableLock(new ReentrantLock());
     }
 
@@ -101,7 +93,6 @@ public class CertificateReloadManager implements Lifecycle {
         logger.info("Starting JGroups certificate reload manager");
         notifier.addListener(this);
         scheduleNextRotation();
-        certificateHolder.setExceptionHandler(this::onInvalidCertificate);
 
         lock.lock();
         try(lock) {
@@ -134,7 +125,7 @@ public class CertificateReloadManager implements Lifecycle {
         logger.info("Rotating JGroups certificate");
         lock.lock();
         try (lock) {
-            KeycloakModelUtils.runJobInTransaction(sessionFactory, this::replaceCertificateInTransaction);
+            KeycloakModelUtils.runJobInTransaction(sessionFactory, CertificateReloadManager::replaceCertificateInTransaction);
             sendReloadNotification();
         } catch (RuntimeException e) {
             logger.warn("Failed to rotate JGroups certificate", e);
@@ -153,13 +144,8 @@ public class CertificateReloadManager implements Lifecycle {
                 bootFuture.cancel(true);
                 bootFuture = null;
             }
-            var maybeCrt = KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, CertificateReloadManager::loadCertificateInTransaction);
-            if (maybeCrt.isEmpty()) {
-                return;
-            }
-            var crt = JGroupsCertificate.fromJson(maybeCrt.get());
-            certificateHolder.useCertificate(crt);
-        } catch (GeneralSecurityException | IOException e) {
+            KeycloakModelUtils.runJobInTransaction(sessionFactory, CertificateReloadManager::loadCertificateInTransaction);
+        } catch (RuntimeException e) {
             logger.warn("Failed to reload JGroups certificate", e);
             retry(this::reloadCertificate, "retry-reload");
         } finally {
@@ -173,21 +159,6 @@ public class CertificateReloadManager implements Lifecycle {
         logger.debug("On view changed");
         // probably a waste to reload, but if we have a partition, we reload the most recent certificate stored.
         reloadCertificate();
-    }
-
-    // testing purpose
-    public JGroupsCertificate currentCertificate() {
-        return certificateHolder.getCertificateInUse();
-    }
-
-    // testing purpose
-    public void setRotationSeconds(long seconds) {
-        this.rotationSeconds = seconds;
-    }
-
-    // testing purpose
-    public long getRotationSeconds() {
-        return rotationSeconds;
     }
 
     // testing purpose
@@ -207,13 +178,8 @@ public class CertificateReloadManager implements Lifecycle {
         logger.info("[Boot] reloading certificate.");
         lock.lock();
         try (lock) {
-            var maybeCrt = KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, CertificateReloadManager::loadCertificateInTransaction);
-            if (maybeCrt.isEmpty()) {
-                return;
-            }
-            var crt = JGroupsCertificate.fromJson(maybeCrt.get());
-            certificateHolder.useCertificate(crt);
-        } catch (GeneralSecurityException | IOException e) {
+            KeycloakModelUtils.runJobInTransaction(sessionFactory, CertificateReloadManager::loadCertificateInTransaction);
+        } catch (RuntimeException e) {
             logger.warn("Exception on boot reload cycle. Ignoring it.", e);
         }
     }
@@ -239,8 +205,8 @@ public class CertificateReloadManager implements Lifecycle {
             if (!isCoordinator()) {
                 return;
             }
-            var crt = certificateHolder.getCertificateInUse();
-            var delay = delayUntilNextRotation(Instant.ofEpochMilli(crt.getGeneratedMillis()), crt.getCertificate().getNotAfter().toInstant());
+
+            var delay = KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, CertificateReloadManager::nextRotationDelay);
             logger.debugf("Next rotation in %s", delay);
             if (delay.isZero()) {
                 blockingManager.runBlocking(this::rotateCertificate, "rotate");
@@ -250,27 +216,16 @@ public class CertificateReloadManager implements Lifecycle {
         }
     }
 
-    private void replaceCertificateInTransaction(KeycloakSession session) {
-        var storage = session.getProvider(ServerConfigStorageProvider.class);
-        var holder = certificateHolder.getCertificateInUse();
-        storage.replace(CERTIFICATE_ID, holder::isSameAlias, () -> generateSelfSignedCertificate(rotationSeconds * 2L));
+    private static void replaceCertificateInTransaction(KeycloakSession session) {
+        session.getProvider(JGroupsCertificateProvider.class).rotateCertificate();
     }
 
-    private static Optional<String> loadCertificateInTransaction(KeycloakSession session) {
-        return session.getProvider(ServerConfigStorageProvider.class).find(CERTIFICATE_ID);
+    private static void loadCertificateInTransaction(KeycloakSession session) {
+        session.getProvider(JGroupsCertificateProvider.class).reloadCertificate();
     }
 
-    private Duration delayUntilNextRotation(Instant certificateStartInstant, Instant certificateEndInstant) {
-        var rotationInstant = certificateStartInstant.plus(Duration.ofSeconds(rotationSeconds));
-
-        // Avoid the current certificate to expire if the old duration was shorter than the new duration
-        var rotationInstantOldCertificate = certificateStartInstant.plus(Duration.between(certificateStartInstant, certificateEndInstant).dividedBy(2));
-        if (rotationInstantOldCertificate.isBefore(rotationInstant)) {
-            rotationInstant = rotationInstantOldCertificate;
-        }
-
-        var secondsLeft = Instant.ofEpochSecond(Time.currentTime()).until(rotationInstant, ChronoUnit.SECONDS);
-        return secondsLeft > 0 ? Duration.ofSeconds(secondsLeft) : Duration.ZERO;
+    private static Duration nextRotationDelay(KeycloakSession session) {
+        return session.getProvider(JGroupsCertificateProvider.class).nextRotation();
     }
 
     private void sendReloadNotification() {

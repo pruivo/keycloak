@@ -11,6 +11,8 @@ import org.junit.Test;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.infinispan.module.certificates.CertificateReloadManager;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
+import org.keycloak.spi.infinispan.impl.DatabaseJGroupsCertificateProviderFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -114,12 +116,13 @@ public class JGroupsCertificateRotationClusterTest extends AbstractClusterTest {
                         if (crm == null) {
                             throw new RuntimeException("MTLS is not enabled");
                         }
-                        long originalRotation = crm.getRotationSeconds();
-                        crm.setRotationSeconds(timeUnit.toSeconds(time));
+                        var provider = databaseJGroupsCertificateProviderFactory(session);
+                        var originalRotation = provider.getRotationPeriod();
+                        databaseJGroupsCertificateProviderFactory(session).setRotationPeriod(Duration.ofSeconds(timeUnit.toSeconds(time)));
                         if (crm.isCoordinator()) {
                             crm.rotateCertificate();
                         }
-                        return originalRotation;
+                        return originalRotation.toSeconds();
                     }, Long.class);
         }
 
@@ -133,7 +136,7 @@ public class JGroupsCertificateRotationClusterTest extends AbstractClusterTest {
                             if (crm == null) {
                                 throw new RuntimeException("MTLS is not enabled");
                             }
-                            crm.setRotationSeconds(finalPreviousRotationSeconds);
+                            databaseJGroupsCertificateProviderFactory(session).setRotationPeriod(Duration.ofSeconds(finalPreviousRotationSeconds));
                             if (crm.isCoordinator()) {
                                 crm.rotateCertificate();
                             }
@@ -185,6 +188,10 @@ public class JGroupsCertificateRotationClusterTest extends AbstractClusterTest {
         return GlobalComponentRegistry.componentOf(cacheManager(session), CertificateReloadManager.class);
     }
 
+    private static DatabaseJGroupsCertificateProviderFactory databaseJGroupsCertificateProviderFactory(KeycloakSession session) {
+        return (DatabaseJGroupsCertificateProviderFactory) session.getKeycloakSessionFactory().getProviderFactory(JGroupsCertificateProvider.class);
+    }
+
     private static EmbeddedCacheManager cacheManager(KeycloakSession session) {
         return session.getProvider(InfinispanConnectionProvider.class)
                 .getCache(InfinispanConnectionProvider.USER_CACHE_NAME)
@@ -192,7 +199,7 @@ public class JGroupsCertificateRotationClusterTest extends AbstractClusterTest {
     }
 
     private static String currentCertificateAlias(KeycloakSession session) {
-        return certificateReloadManager(session)
+        return databaseJGroupsCertificateProviderFactory(session)
                 .currentCertificate()
                 .getAlias();
     }
