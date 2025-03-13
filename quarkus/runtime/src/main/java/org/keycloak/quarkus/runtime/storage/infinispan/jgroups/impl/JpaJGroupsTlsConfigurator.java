@@ -17,23 +17,16 @@
 
 package org.keycloak.quarkus.runtime.storage.infinispan.jgroups.impl;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
-import java.util.concurrent.TimeUnit;
 
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.jgroups.util.DefaultSocketFactory;
 import org.jgroups.util.SocketFactory;
-import org.keycloak.common.util.Retry;
-import org.keycloak.config.CachingOptions;
-import org.keycloak.infinispan.module.certificates.CertificateReloadManager;
-import org.keycloak.infinispan.module.certificates.JGroupsCertificateHolder;
 import org.keycloak.infinispan.module.configuration.global.KeycloakConfigurationBuilder;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
+import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
 import javax.net.ssl.KeyManager;
@@ -42,10 +35,6 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.TrustManager;
 
-import static org.keycloak.infinispan.module.certificates.CertificateReloadManager.CERTIFICATE_ID;
-import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.fromJson;
-import static org.keycloak.quarkus.runtime.storage.infinispan.CacheManagerFactory.requiredIntegerProperty;
-
 /**
  * JGroups mTLS configuration using certificates stored by {@link ServerConfigStorageProvider}.
  */
@@ -53,9 +42,6 @@ public class JpaJGroupsTlsConfigurator extends BaseJGroupsTlsConfigurator {
 
     private static final String TLS_PROTOCOL_VERSION = "TLSv1.3";
     private static final String TLS_PROTOCOL = "TLS";
-    // 2.5 seconds in the worst case. Unlikely to happen, except if the DB connection is unreliable.
-    private static final int STARTUP_RETRIES = 5;
-    private static final int STARTUP_RETRY_SLEEP_MILLIS = 500;
     public static final JpaJGroupsTlsConfigurator INSTANCE = new JpaJGroupsTlsConfigurator();
 
     @Override
@@ -66,33 +52,15 @@ public class JpaJGroupsTlsConfigurator extends BaseJGroupsTlsConfigurator {
     @Override
     SocketFactory createSocketFactory(ConfigurationBuilderHolder holder, KeycloakSession session) {
         var factory = session.getKeycloakSessionFactory();
+        var providerFactory = (JGroupsCertificateProviderFactory) factory.getProviderFactory(JGroupsCertificateProvider.class);
         var kcConfig = holder.getGlobalConfigurationBuilder().addModule(KeycloakConfigurationBuilder.class);
-        var crtHolder = loadInitialCertificateWithRetry(factory);
-        kcConfig.setJGroupsCertificateRotation(requiredIntegerProperty(CachingOptions.CACHE_EMBEDDED_MTLS_ROTATION));
         kcConfig.setKeycloakSessionFactory(factory);
-        kcConfig.setJGroupCertificateHolder(crtHolder);
-
         try {
             var sslContext = SSLContext.getInstance(TLS_PROTOCOL);
-            sslContext.init(new KeyManager[]{crtHolder.keyManager()}, new TrustManager[]{crtHolder.trustManager()}, null);
+            sslContext.init(new KeyManager[]{providerFactory.keyManager()}, new TrustManager[]{providerFactory.trustManager()}, null);
             return createFromContext(sslContext);
         } catch (KeyManagementException | NoSuchAlgorithmException e) {
             // we should have valid certificates and keys.
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static JGroupsCertificateHolder loadInitialCertificateWithRetry(KeycloakSessionFactory factory) {
-        return Retry.call(iteration -> KeycloakModelUtils.runJobInTransactionWithResult(factory, JpaJGroupsTlsConfigurator::createOrLoadCertificate), STARTUP_RETRIES, STARTUP_RETRY_SLEEP_MILLIS);
-    }
-
-    private static JGroupsCertificateHolder createOrLoadCertificate(KeycloakSession session) {
-        try {
-            var rotationDays = requiredIntegerProperty(CachingOptions.CACHE_EMBEDDED_MTLS_ROTATION);
-            var storage = session.getProvider(ServerConfigStorageProvider.class);
-            var data = fromJson(storage.loadOrCreate(CERTIFICATE_ID, () -> CertificateReloadManager.generateSelfSignedCertificate(TimeUnit.DAYS.toSeconds(rotationDays) * 2L)));
-            return JGroupsCertificateHolder.create(data);
-        } catch (IOException | GeneralSecurityException e) {
             throw new RuntimeException(e);
         }
     }

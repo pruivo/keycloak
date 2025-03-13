@@ -26,10 +26,6 @@ import javax.net.ssl.X509ExtendedTrustManager;
 
 public interface JGroupsCertificateProvider extends Provider {
 
-    X509ExtendedKeyManager keyManager();
-
-    X509ExtendedTrustManager trustManager();
-
     default void rotateCertificate() {
         throw new UnsupportedOperationException();
     }

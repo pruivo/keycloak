@@ -15,10 +15,8 @@
  * limitations under the License.
  */
 
-package org.keycloak.spi.infinispan.impl;
+package org.keycloak.infinispan.module.certificates;
 
-import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -27,28 +25,21 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 import org.keycloak.common.util.Time;
-import org.keycloak.infinispan.module.certificates.JGroups;
-import org.keycloak.infinispan.module.certificates.JGroupsCertificate;
-import org.keycloak.infinispan.module.certificates.Utils;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
-
-public class DatabaseJGroupsCertificateProvider implements JGroupsCertificateProvider {
+public class DatabaseJGroupsCertificateProvider implements JGroupsCertificateProvider, Supplier<String> {
 
     public static final String CERTIFICATE_ID = "crt_jgroups";
-    private final JGroups certificateHolder;
-    private final KeycloakSession session;
-    private final Supplier<String> certGenerator;
+    private final CertificateStore store;
+    private final KeycloakSessionFactory sessionFactory;
 
-    public DatabaseJGroupsCertificateProvider(JGroups certificateHolder, KeycloakSession session, Supplier<String> certGenerator) {
-        this.certificateHolder = certificateHolder;
-        this.session = session;
-        this.certGenerator = certGenerator;
+    public DatabaseJGroupsCertificateProvider(CertificateStore certificateStore, KeycloakSession session) {
+        this.store = Objects.requireNonNull(certificateStore);
+        this.sessionFactory = session.getKeycloakSessionFactory();
     }
 
     @Override
@@ -57,18 +48,8 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
     }
 
     @Override
-    public X509ExtendedKeyManager keyManager() {
-        return certificateHolder.getKeyManager();
-    }
-
-    @Override
-    public X509ExtendedTrustManager trustManager() {
-        return certificateHolder.getTrustManager();
-    }
-
-    @Override
     public void rotateCertificate() {
-        KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), this::replaceCertificateFromDatabase);
+        KeycloakModelUtils.runJobInTransaction(sessionFactory, this::replaceCertificateFromDatabase);
     }
 
     @Override
@@ -78,7 +59,7 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
 
     @Override
     public Duration nextRotation() {
-        var cert = certificateHolder.getCertificate().getCertificate();
+        var cert = store.certificate().getCertificate();
         return delayUntilNextRotation(cert.getNotAfter().toInstant(), cert.getNotAfter().toInstant());
     }
 
@@ -87,27 +68,20 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
         return true;
     }
 
+    @Override
+    public String get() {
+        // Supplier interface to generate a new certificate
+        return JGroupsCertificate.toJson(store.generate());
+    }
+
     void onTrustManagerException() {
         doReload();
     }
 
     private void doReload() {
-        var maybeCert = KeycloakModelUtils.runJobInTransactionWithResult(session.getKeycloakSessionFactory(), DatabaseJGroupsCertificateProvider::loadCertificateFromDatabase);
-        if (maybeCert.isEmpty()) {
-            return;
-        }
-        var loadedCert = JGroupsCertificate.fromJson(maybeCert.get());
-        var currentCert = certificateHolder.getCertificate();
-        if (Objects.equals(loadedCert.getAlias(), currentCert.getAlias())) {
-            return;
-        }
-        try {
-            certificateHolder.updateCertificate(loadedCert,
-                    Utils.createKeyManager(loadedCert),
-                    Utils.createTrustManager(currentCert, loadedCert));
-        } catch (GeneralSecurityException | IOException e) {
-            throw new RuntimeException(e);
-        }
+        KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, DatabaseJGroupsCertificateProvider::loadCertificateFromDatabase)
+                .map(JGroupsCertificate::fromJson)
+                .ifPresent(store::useCertificate);
     }
 
     private static Duration delayUntilNextRotation(Instant certificateStartInstant, Instant certificateEndInstant) {
@@ -123,7 +97,15 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
 
     private void replaceCertificateFromDatabase(KeycloakSession session) {
         var storage = session.getProvider(ServerConfigStorageProvider.class);
-        var holder = certificateHolder.getCertificate();
-        storage.replace(CERTIFICATE_ID, holder::isSameAlias, certGenerator);
+        var holder = store.certificate();
+        storage.replace(CERTIFICATE_ID, holder::isSameAlias, this);
+    }
+
+    public interface CertificateStore {
+        JGroupsCertificate certificate();
+
+        void useCertificate(JGroupsCertificate certificate);
+
+        JGroupsCertificate generate();
     }
 }

@@ -12,7 +12,7 @@ import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.infinispan.module.certificates.CertificateReloadManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
-import org.keycloak.spi.infinispan.impl.DatabaseJGroupsCertificateProviderFactory;
+import org.keycloak.infinispan.module.certificates.DatabaseJGroupsCertificateProviderFactory;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -200,7 +200,7 @@ public class JGroupsCertificateRotationClusterTest extends AbstractClusterTest {
 
     private static String currentCertificateAlias(KeycloakSession session) {
         return databaseJGroupsCertificateProviderFactory(session)
-                .currentCertificate()
+                .certificate()
                 .getAlias();
     }
 

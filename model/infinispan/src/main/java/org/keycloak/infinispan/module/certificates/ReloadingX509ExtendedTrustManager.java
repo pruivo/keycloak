@@ -11,7 +11,7 @@ import javax.net.ssl.X509ExtendedTrustManager;
 /**
  * A {@link X509ExtendedTrustManager} that allows to update the trusted certificate at runtime.
  */
-public class ReloadingX509ExtendedTrustManager extends X509ExtendedTrustManager {
+class ReloadingX509ExtendedTrustManager extends X509ExtendedTrustManager {
 
     private volatile X509ExtendedTrustManager delegate;
     private volatile Runnable onException;

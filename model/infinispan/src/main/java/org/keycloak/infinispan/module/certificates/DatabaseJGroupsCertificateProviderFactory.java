@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.keycloak.spi.infinispan.impl;
+package org.keycloak.infinispan.module.certificates;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
@@ -25,13 +25,12 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.util.Retry;
-import org.keycloak.infinispan.module.certificates.JGroups;
-import org.keycloak.infinispan.module.certificates.JGroupsCertificate;
-import org.keycloak.infinispan.module.certificates.Utils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
@@ -43,11 +42,14 @@ import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509ExtendedTrustManager;
+
+import static org.keycloak.infinispan.module.certificates.DatabaseJGroupsCertificateProvider.CERTIFICATE_ID;
 import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.fromJson;
 import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.toJson;
-import static org.keycloak.spi.infinispan.impl.DatabaseJGroupsCertificateProvider.CERTIFICATE_ID;
 
-public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertificateProviderFactory, EnvironmentDependentProviderFactory {
+public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertificateProviderFactory, EnvironmentDependentProviderFactory, DatabaseJGroupsCertificateProvider.CertificateStore {
 
     private static final String PROVIDER_ID = "jpa";
 
@@ -58,15 +60,15 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
     private static final int STARTUP_RETRIES = 5;
     private static final int STARTUP_RETRY_SLEEP_MILLIS = 500;
 
+    private final Lock lock = new ReentrantLock();
     private volatile Duration rotationPeriod;
-    private volatile JGroups certificateHolder;
+    private volatile ReloadingX509ExtendedKeyManager keyManager;
+    private volatile ReloadingX509ExtendedTrustManager trustManager;
+    private volatile JGroupsCertificate currentCertificate;
 
     @Override
     public JGroupsCertificateProvider create(KeycloakSession session) {
-        if (certificateHolder == null) {
-            postInit(session.getKeycloakSessionFactory());
-        }
-        return new DatabaseJGroupsCertificateProvider(certificateHolder, session, this::generateSelfSignedCertificate);
+        return new DatabaseJGroupsCertificateProvider(this, session);
     }
 
     @Override
@@ -75,18 +77,24 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
     }
 
     @Override
-    public synchronized void postInit(KeycloakSessionFactory factory) {
-        if (certificateHolder != null) {
-            return;
-        }
-        logger.debug("Initializing JGroups mTLS certificate.");
+    public void postInit(KeycloakSessionFactory factory) {
+        lock.lock();
         try {
+            if (currentCertificate != null) {
+                return;
+            }
+            logger.debug("Initializing JGroups mTLS certificate.");
+
             var cert = Retry.call(ignored -> KeycloakModelUtils.runJobInTransactionWithResult(factory, this::loadOrCreateCertificate), STARTUP_RETRIES, STARTUP_RETRY_SLEEP_MILLIS);
             var km = Utils.createKeyManager(cert);
             var tm = Utils.createTrustManager(null, cert);
-            certificateHolder = new JGroups(cert, km, tm);
+            this.currentCertificate = cert;
+            this.keyManager = new ReloadingX509ExtendedKeyManager(km);
+            this.trustManager = new ReloadingX509ExtendedTrustManager(tm);
         } catch (GeneralSecurityException | IOException e) {
             throw new RuntimeException(e);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -123,7 +131,7 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
     }
 
     private String generateSelfSignedCertificate() {
-        return toJson(Utils.generateSelfSignedCertificate(rotationPeriod.multipliedBy(2)));
+        return toJson(generate());
     }
 
     @Override
@@ -139,7 +147,42 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
         return rotationPeriod;
     }
 
-    public JGroupsCertificate currentCertificate() {
-        return certificateHolder.getCertificate();
+    @Override
+    public X509ExtendedKeyManager keyManager() {
+        return keyManager;
+    }
+
+    @Override
+    public X509ExtendedTrustManager trustManager() {
+        return trustManager;
+    }
+
+    @Override
+    public JGroupsCertificate certificate() {
+        return currentCertificate;
+    }
+
+    @Override
+    public void useCertificate(JGroupsCertificate certificate) {
+        lock.lock();
+        try {
+            if (Objects.equals(currentCertificate.getAlias(), certificate.getAlias())) {
+                return;
+            }
+            var km = Utils.createKeyManager(certificate);
+            var tm = Utils.createTrustManager(currentCertificate, certificate);
+            currentCertificate = certificate;
+            keyManager.reload(km);
+            trustManager.reload(tm);
+        } catch (GeneralSecurityException | IOException e) {
+            throw new RuntimeException(e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public JGroupsCertificate generate() {
+        return Utils.generateSelfSignedCertificate(rotationPeriod.multipliedBy(2));
     }
 }

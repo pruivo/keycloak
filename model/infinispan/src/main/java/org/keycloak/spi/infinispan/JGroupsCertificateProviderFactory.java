@@ -19,5 +19,13 @@ package org.keycloak.spi.infinispan;
 
 import org.keycloak.provider.ProviderFactory;
 
+import javax.net.ssl.X509ExtendedKeyManager;
+import javax.net.ssl.X509ExtendedTrustManager;
+
 public interface JGroupsCertificateProviderFactory extends ProviderFactory<JGroupsCertificateProvider> {
+
+    X509ExtendedKeyManager keyManager();
+
+    X509ExtendedTrustManager trustManager();
+
 }
