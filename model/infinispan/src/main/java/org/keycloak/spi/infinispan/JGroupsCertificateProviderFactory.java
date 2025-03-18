@@ -19,13 +19,21 @@ package org.keycloak.spi.infinispan;
 
 import org.keycloak.provider.ProviderFactory;
 
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
 
 public interface JGroupsCertificateProviderFactory extends ProviderFactory<JGroupsCertificateProvider> {
 
-    X509ExtendedKeyManager keyManager();
+    KeyManager keyManager();
 
-    X509ExtendedTrustManager trustManager();
+    TrustManager trustManager();
+
+    default boolean isEnabled() {
+        return true;
+    }
+
+    default boolean supportsReloadAndRotation() {
+        return false;
+    }
 
 }

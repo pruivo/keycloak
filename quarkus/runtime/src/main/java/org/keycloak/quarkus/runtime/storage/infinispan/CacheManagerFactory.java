@@ -109,12 +109,6 @@ public class CacheManagerFactory {
         ConfigurationBuilderHolder builder = new ParserRegistry().parse(config);
         jGroupsConfigurator = JGroupsConfigurator.create(builder);
 
-        if (jGroupsConfigurator.requiresKeycloakSession()) {
-            cacheManagerFuture = null;
-        } else {
-            cacheManagerFuture = CompletableFuture.supplyAsync(() -> startEmbeddedCacheManager(null));
-        }
-
         if (InfinispanUtils.isRemoteInfinispan()) {
             logger.debug("Remote Cache feature is enabled");
             this.remoteCacheManagerFuture = CompletableFuture.supplyAsync(this::startRemoteCacheManager);

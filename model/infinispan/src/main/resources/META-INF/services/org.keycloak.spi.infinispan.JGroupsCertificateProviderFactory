@@ -16,4 +16,5 @@
 #
 
 org.keycloak.infinispan.module.certificates.DatabaseJGroupsCertificateProviderFactory
-org.keycloak.spi.infinispan.impl.NoOpJGroupsCertificateProviderFactory
+org.keycloak.spi.infinispan.impl.DisabledJGroupsCertificateProviderFactory
+org.keycloak.spi.infinispan.impl.FileJGroupsCertificateProviderFactory

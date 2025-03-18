@@ -21,10 +21,14 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
+import org.infinispan.remoting.transport.jgroups.JGroupsTransport;
 import org.jgroups.util.DefaultSocketFactory;
 import org.jgroups.util.SocketFactory;
 import org.keycloak.infinispan.module.configuration.global.KeycloakConfigurationBuilder;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.quarkus.runtime.storage.infinispan.CacheManagerFactory;
+import org.keycloak.quarkus.runtime.storage.infinispan.jgroups.JGroupsStackConfigurator;
+import org.keycloak.quarkus.runtime.storage.infinispan.jgroups.JGroupsUtil;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
@@ -38,19 +42,23 @@ import javax.net.ssl.TrustManager;
 /**
  * JGroups mTLS configuration using certificates stored by {@link ServerConfigStorageProvider}.
  */
-public class JpaJGroupsTlsConfigurator extends BaseJGroupsTlsConfigurator {
+public class JpaJGroupsTlsConfigurator implements JGroupsStackConfigurator {
 
     private static final String TLS_PROTOCOL_VERSION = "TLSv1.3";
     private static final String TLS_PROTOCOL = "TLS";
     public static final JpaJGroupsTlsConfigurator INSTANCE = new JpaJGroupsTlsConfigurator();
 
-    @Override
-    public boolean requiresKeycloakSession() {
-        return true;
-    }
 
     @Override
-    SocketFactory createSocketFactory(ConfigurationBuilderHolder holder, KeycloakSession session) {
+    public void configure(ConfigurationBuilderHolder holder, KeycloakSession session) {
+        var factory = createSocketFactory(holder, session);
+        JGroupsUtil.transportOf(holder).addProperty(JGroupsTransport.SOCKET_FACTORY, factory);
+        JGroupsUtil.validateTlsAvailable(holder);
+        CacheManagerFactory.logger.info("JGroups Encryption enabled (mTLS).");
+    }
+
+
+    private static SocketFactory createSocketFactory(ConfigurationBuilderHolder holder, KeycloakSession session) {
         var factory = session.getKeycloakSessionFactory();
         var providerFactory = (JGroupsCertificateProviderFactory) factory.getProviderFactory(JGroupsCertificateProvider.class);
         var kcConfig = holder.getGlobalConfigurationBuilder().addModule(KeycloakConfigurationBuilder.class);
@@ -73,5 +81,4 @@ public class JpaJGroupsTlsConfigurator extends BaseJGroupsTlsConfigurator {
         socketFactory.setServerSocketConfigurator(socket -> ((SSLServerSocket) socket).setSSLParameters(serverParameters));
         return socketFactory;
     }
-
 }

@@ -25,10 +25,10 @@ import org.keycloak.provider.EnvironmentDependentProviderFactory;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
 
-public class NoOpJGroupsCertificateProviderFactory implements JGroupsCertificateProviderFactory, JGroupsCertificateProvider, EnvironmentDependentProviderFactory {
+public class DisabledJGroupsCertificateProviderFactory implements JGroupsCertificateProviderFactory, JGroupsCertificateProvider, EnvironmentDependentProviderFactory {
 
     @Override
     public JGroupsCertificateProvider create(KeycloakSession session) {
@@ -52,21 +52,26 @@ public class NoOpJGroupsCertificateProviderFactory implements JGroupsCertificate
 
     @Override
     public String getId() {
-        return "empty";
+        return "disabled";
     }
 
     @Override
-    public X509ExtendedKeyManager keyManager() {
+    public KeyManager keyManager() {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public X509ExtendedTrustManager trustManager() {
+    public TrustManager trustManager() {
         throw new UnsupportedOperationException();
     }
 
     @Override
     public boolean isSupported(Config.Scope config) {
         return !Utils.isMtlsEnabled();
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return false;
     }
 }

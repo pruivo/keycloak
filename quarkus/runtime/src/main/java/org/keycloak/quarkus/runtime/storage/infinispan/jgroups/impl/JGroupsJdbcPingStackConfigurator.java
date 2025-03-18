@@ -47,11 +47,6 @@ public class JGroupsJdbcPingStackConfigurator implements JGroupsStackConfigurato
     private JGroupsJdbcPingStackConfigurator() {}
 
     @Override
-    public boolean requiresKeycloakSession() {
-        return true;
-    }
-
-    @Override
     public void configure(ConfigurationBuilderHolder holder, KeycloakSession session) {
         var em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
         var stackName = JGroupsUtil.transportStackOf(holder).get();

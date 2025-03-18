@@ -66,23 +66,27 @@ final class CachingPropertyMappers {
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE.withRuntimeSpecificDefault(getDefaultKeystorePathValue()))
                         .paramLabel("file")
+                        .to("kc.spi-jgroups-mtls-file-keytstore-path")
                         .isEnabled(() -> Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED), "property '%s' is enabled".formatted(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED.getKey()))
                         .validator(value -> checkOptionPresent(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE, CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_PASSWORD))
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_PASSWORD)
                         .paramLabel("password")
                         .isMasked(true)
+                        .to("kc.spi-jgroups-mtls-file-keytstore-password")
                         .isEnabled(() -> Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED), "property '%s' is enabled".formatted(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED.getKey()))
                         .validator(value -> checkOptionPresent(CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE_PASSWORD, CachingOptions.CACHE_EMBEDDED_MTLS_KEYSTORE))
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE.withRuntimeSpecificDefault(getDefaultTruststorePathValue()))
                         .paramLabel("file")
+                        .to("kc.spi-jgroups-mtls-file-truststore-path")
                         .isEnabled(() -> Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED), "property '%s' is enabled".formatted(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED.getKey()))
                         .validator(value -> checkOptionPresent(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE, CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE_PASSWORD))
                         .build(),
                 fromOption(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE_PASSWORD)
                         .paramLabel("password")
                         .isMasked(true)
+                        .to("kc.spi-jgroups-mtls-file-truststore-password")
                         .isEnabled(() -> Configuration.isTrue(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED), "property '%s' is enabled".formatted(CachingOptions.CACHE_EMBEDDED_MTLS_ENABLED.getKey()))
                         .validator(value -> checkOptionPresent(CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE_PASSWORD, CachingOptions.CACHE_EMBEDDED_MTLS_TRUSTSTORE))
                         .build(),

@@ -40,10 +40,12 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
+import org.keycloak.spi.infinispan.JGroupsCertificateProviderSpi;
+import org.keycloak.spi.infinispan.impl.FileJGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
-import javax.net.ssl.X509ExtendedKeyManager;
-import javax.net.ssl.X509ExtendedTrustManager;
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
 
 import static org.keycloak.infinispan.module.certificates.DatabaseJGroupsCertificateProvider.CERTIFICATE_ID;
 import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.fromJson;
@@ -121,6 +123,7 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
                 .type("int")
                 .label("days")
                 .defaultValue(ROTATION_DEFAULT_VALUE)
+                .helpText("")
                 .add()
                 .build();
     }
@@ -136,7 +139,8 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
 
     @Override
     public boolean isSupported(Config.Scope config) {
-        return Utils.isMtlsEnabled();
+        var fileConfig = Config.scope(JGroupsCertificateProviderSpi.SPI_NAME, FileJGroupsCertificateProviderFactory.PROVIDER_ID);
+        return Utils.isMtlsEnabled() && !FileJGroupsCertificateProviderFactory.isFileMtlsEnabled(fileConfig);
     }
 
     public void setRotationPeriod(Duration rotationPeriod) {
@@ -148,18 +152,23 @@ public class DatabaseJGroupsCertificateProviderFactory implements JGroupsCertifi
     }
 
     @Override
-    public X509ExtendedKeyManager keyManager() {
+    public KeyManager keyManager() {
         return keyManager;
     }
 
     @Override
-    public X509ExtendedTrustManager trustManager() {
+    public TrustManager trustManager() {
         return trustManager;
     }
 
     @Override
     public JGroupsCertificate certificate() {
         return currentCertificate;
+    }
+
+    @Override
+    public boolean supportsReloadAndRotation() {
+        return true;
     }
 
     @Override

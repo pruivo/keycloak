@@ -64,11 +64,6 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
     }
 
     @Override
-    public boolean supportsReloadAndRotation() {
-        return true;
-    }
-
-    @Override
     public String get() {
         // Supplier interface to generate a new certificate
         return JGroupsCertificate.toJson(store.generate());
