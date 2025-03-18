@@ -71,7 +71,7 @@ import org.keycloak.models.sessions.infinispan.query.UserSessionQueries;
 import org.keycloak.models.sessions.infinispan.remote.RemoteInfinispanAuthenticationSessionProviderFactory;
 import org.keycloak.models.sessions.infinispan.remote.RemoteUserLoginFailureProviderFactory;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
-import org.keycloak.quarkus.runtime.storage.infinispan.jgroups.JGroupsConfigurator;
+import org.keycloak.jgroups.JGroupsConfigurator;
 
 import javax.net.ssl.SSLContext;
 

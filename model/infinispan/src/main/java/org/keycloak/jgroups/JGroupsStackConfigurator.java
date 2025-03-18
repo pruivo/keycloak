@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.keycloak.quarkus.runtime.storage.infinispan.jgroups;
+package org.keycloak.jgroups;
 
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.keycloak.models.KeycloakSession;

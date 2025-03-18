@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.keycloak.quarkus.runtime.storage.infinispan.jgroups.impl;
+package org.keycloak.jgroups.impl;
 
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -25,10 +25,10 @@ import org.infinispan.remoting.transport.jgroups.JGroupsTransport;
 import org.jgroups.util.DefaultSocketFactory;
 import org.jgroups.util.SocketFactory;
 import org.keycloak.infinispan.module.configuration.global.KeycloakConfigurationBuilder;
+import org.keycloak.jgroups.JGroupsConfigurator;
+import org.keycloak.jgroups.JGroupsStackConfigurator;
+import org.keycloak.jgroups.JGroupsUtil;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.quarkus.runtime.storage.infinispan.CacheManagerFactory;
-import org.keycloak.quarkus.runtime.storage.infinispan.jgroups.JGroupsStackConfigurator;
-import org.keycloak.quarkus.runtime.storage.infinispan.jgroups.JGroupsUtil;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
@@ -54,7 +54,7 @@ public class JpaJGroupsTlsConfigurator implements JGroupsStackConfigurator {
         var factory = createSocketFactory(holder, session);
         JGroupsUtil.transportOf(holder).addProperty(JGroupsTransport.SOCKET_FACTORY, factory);
         JGroupsUtil.validateTlsAvailable(holder);
-        CacheManagerFactory.logger.info("JGroups Encryption enabled (mTLS).");
+        JGroupsConfigurator.logger.info("JGroups Encryption enabled (mTLS).");
     }
 
 
