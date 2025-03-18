@@ -1,4 +1,21 @@
-package org.keycloak.infinispan.module.certificates;
+/*
+ * Copyright 2025 Red Hat, Inc. and/or its affiliates
+ * and other contributors as indicated by the @author tags.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.keycloak.jgroups.certificates;
 
 import java.lang.invoke.MethodHandles;
 import java.math.BigInteger;
@@ -36,7 +53,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 
-import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.toJson;
+import static org.keycloak.jgroups.certificates.JGroupsCertificate.toJson;
 
 /**
  * Class to handle JGroups certificate reloading for encryption (mTLS).
@@ -59,7 +76,6 @@ import static org.keycloak.infinispan.module.certificates.JGroupsCertificate.toJ
 public class CertificateReloadManager implements Lifecycle {
 
     private static final Logger logger = Logger.getLogger(MethodHandles.lookup().lookupClass());
-    public static final String CERTIFICATE_ID = "crt_jgroups";
     private static final String JGROUPS_SUBJECT = "jgroups";
     private static final Duration RETRY_WAIT_TIME = Duration.ofMinutes(1);
     private static final Duration BOOT_PERIOD = Duration.ofMillis(200);

@@ -21,7 +21,13 @@ import java.time.Duration;
 
 import org.keycloak.provider.Provider;
 
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
+
 public interface JGroupsCertificateProvider extends Provider {
+
+    JGroupsCertificateProvider DISABLED = new JGroupsCertificateProvider() {
+    };
 
     default void rotateCertificate() {
         throw new UnsupportedOperationException();
@@ -33,5 +39,25 @@ public interface JGroupsCertificateProvider extends Provider {
 
     default Duration nextRotation() {
         throw new UnsupportedOperationException();
+    }
+
+    default KeyManager keyManager() {
+        throw new UnsupportedOperationException();
+    }
+
+    default TrustManager trustManager() {
+        throw new UnsupportedOperationException();
+    }
+
+    default boolean supportRotateAndReload() {
+        return false;
+    }
+
+    default boolean isEnabled() {
+        return false;
+    }
+
+    @Override
+    default void close() {
     }
 }

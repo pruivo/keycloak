@@ -15,6 +15,4 @@
 # limitations under the License.
 #
 
-org.keycloak.infinispan.module.certificates.DatabaseJGroupsCertificateProviderFactory
-org.keycloak.spi.infinispan.impl.DisabledJGroupsCertificateProviderFactory
-org.keycloak.spi.infinispan.impl.FileJGroupsCertificateProviderFactory
+org.keycloak.jgroups.certificates.DefaultJGroupsCertificateProviderFactory

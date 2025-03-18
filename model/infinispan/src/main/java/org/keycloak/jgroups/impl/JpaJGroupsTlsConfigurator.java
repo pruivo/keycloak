@@ -30,7 +30,6 @@ import org.keycloak.jgroups.JGroupsStackConfigurator;
 import org.keycloak.jgroups.JGroupsUtil;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
-import org.keycloak.spi.infinispan.JGroupsCertificateProviderFactory;
 import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
 import javax.net.ssl.KeyManager;
@@ -51,21 +50,23 @@ public class JpaJGroupsTlsConfigurator implements JGroupsStackConfigurator {
 
     @Override
     public void configure(ConfigurationBuilderHolder holder, KeycloakSession session) {
-        var factory = createSocketFactory(holder, session);
+        var kcConfig = holder.getGlobalConfigurationBuilder().addModule(KeycloakConfigurationBuilder.class);
+        kcConfig.setKeycloakSessionFactory(session.getKeycloakSessionFactory());
+        var provider = session.getProvider(JGroupsCertificateProvider.class);
+        if (provider == null || !provider.isEnabled()) {
+            return;
+        }
+        var factory = createSocketFactory(provider);
         JGroupsUtil.transportOf(holder).addProperty(JGroupsTransport.SOCKET_FACTORY, factory);
         JGroupsUtil.validateTlsAvailable(holder);
         JGroupsConfigurator.logger.info("JGroups Encryption enabled (mTLS).");
     }
 
 
-    private static SocketFactory createSocketFactory(ConfigurationBuilderHolder holder, KeycloakSession session) {
-        var factory = session.getKeycloakSessionFactory();
-        var providerFactory = (JGroupsCertificateProviderFactory) factory.getProviderFactory(JGroupsCertificateProvider.class);
-        var kcConfig = holder.getGlobalConfigurationBuilder().addModule(KeycloakConfigurationBuilder.class);
-        kcConfig.setKeycloakSessionFactory(factory);
+    private static SocketFactory createSocketFactory(JGroupsCertificateProvider provider) {
         try {
             var sslContext = SSLContext.getInstance(TLS_PROTOCOL);
-            sslContext.init(new KeyManager[]{providerFactory.keyManager()}, new TrustManager[]{providerFactory.trustManager()}, null);
+            sslContext.init(new KeyManager[]{provider.keyManager()}, new TrustManager[]{provider.trustManager()}, null);
             return createFromContext(sslContext);
         } catch (KeyManagementException | NoSuchAlgorithmException e) {
             // we should have valid certificates and keys.

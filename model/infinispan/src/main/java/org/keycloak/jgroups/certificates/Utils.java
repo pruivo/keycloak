@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.keycloak.infinispan.module.certificates;
+package org.keycloak.jgroups.certificates;
 
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
@@ -32,14 +32,10 @@ import java.util.Date;
 import java.util.UUID;
 
 import org.jboss.logging.Logger;
-import org.keycloak.Config;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.common.util.CertificateUtils;
 import org.keycloak.common.util.KeyUtils;
 import org.keycloak.common.util.KeystoreUtil;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-import org.keycloak.infinispan.util.InfinispanUtils;
-import org.keycloak.spi.infinispan.JGroupsCertificateProviderSpi;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
@@ -71,9 +67,9 @@ public final class Utils {
         return entity;
     }
 
-    public static X509ExtendedKeyManager createKeyManager(JGroupsCertificate newCertificate) throws GeneralSecurityException, IOException {
+    public static X509ExtendedKeyManager createKeyManager(JGroupsCertificate certificate) throws GeneralSecurityException, IOException {
         var ks = getKeyStore();
-        ks.setKeyEntry(newCertificate.getAlias(), newCertificate.getPrivateKey(), KEY_PASSWORD, new java.security.cert.Certificate[]{newCertificate.getCertificate()});
+        ks.setKeyEntry(certificate.getAlias(), certificate.getPrivateKey(), KEY_PASSWORD, new java.security.cert.Certificate[]{certificate.getCertificate()});
         var kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
         kmf.init(ks, KEY_PASSWORD);
         for (KeyManager km : kmf.getKeyManagers()) {
@@ -84,12 +80,9 @@ public final class Utils {
         throw new GeneralSecurityException("Could not obtain an X509ExtendedKeyManager");
     }
 
-    public static X509ExtendedTrustManager createTrustManager(JGroupsCertificate oldCertificate, JGroupsCertificate newCertificate) throws GeneralSecurityException, IOException {
+    public static X509ExtendedTrustManager createTrustManager(JGroupsCertificate certificate) throws GeneralSecurityException, IOException {
         var ks = getKeyStore();
-        if (oldCertificate != null) {
-            ks.setCertificateEntry(oldCertificate.getAlias(), oldCertificate.getCertificate());
-        }
-        ks.setCertificateEntry(newCertificate.getAlias(), newCertificate.getCertificate());
+        ks.setCertificateEntry(certificate.getAlias(), certificate.getCertificate());
         var tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         tmf.init(ks);
         for (TrustManager tm : tmf.getTrustManagers()) {
@@ -98,12 +91,6 @@ public final class Utils {
             }
         }
         throw new GeneralSecurityException("Could not obtain an X509TrustManager");
-    }
-
-    public static boolean isMtlsEnabled() {
-        return InfinispanUtils.isEmbeddedInfinispan() &&
-                Config.scope(JGroupsCertificateProviderSpi.SPI_NAME).getBoolean("enabled", Boolean.FALSE);
-
     }
 
     private static KeyStore getKeyStore() throws KeyStoreException, NoSuchProviderException, CertificateException, IOException, NoSuchAlgorithmException {
