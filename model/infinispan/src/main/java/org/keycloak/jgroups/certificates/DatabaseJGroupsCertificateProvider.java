@@ -25,7 +25,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -92,8 +91,8 @@ public class DatabaseJGroupsCertificateProvider implements JGroupsCertificatePro
 
     @Override
     public Duration nextRotation() {
-        var cert = currentCertificate.getCertificate();
-        return delayUntilNextRotation(cert.getNotAfter().toInstant(), cert.getNotAfter().toInstant());
+        var cert = currentCertificate;
+        return delayUntilNextRotation(Instant.ofEpochMilli(cert.getGeneratedMillis()), cert.getCertificate().getNotAfter().toInstant());
     }
 
     @Override

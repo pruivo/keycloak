@@ -64,6 +64,7 @@ public final class Utils {
         entity.setCertificate(certificate);
         entity.setKeyPair(keyPair);
         entity.setAlias(UUID.randomUUID().toString());
+        entity.setGeneratedMillis(System.currentTimeMillis());
         return entity;
     }
 

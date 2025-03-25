@@ -18,12 +18,7 @@
 package org.keycloak.jgroups.certificates;
 
 import java.lang.invoke.MethodHandles;
-import java.math.BigInteger;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Date;
-import java.util.UUID;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -46,14 +41,10 @@ import org.infinispan.notifications.cachemanagerlistener.event.ViewChangedEvent;
 import org.infinispan.remoting.transport.Address;
 import org.infinispan.util.concurrent.BlockingManager;
 import org.jboss.logging.Logger;
-import org.keycloak.common.util.CertificateUtils;
-import org.keycloak.common.util.KeyUtils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
-
-import static org.keycloak.jgroups.certificates.JGroupsCertificate.toJson;
 
 /**
  * Class to handle JGroups certificate reloading for encryption (mTLS).
@@ -76,7 +67,6 @@ import static org.keycloak.jgroups.certificates.JGroupsCertificate.toJson;
 public class CertificateReloadManager implements Lifecycle {
 
     private static final Logger logger = Logger.getLogger(MethodHandles.lookup().lookupClass());
-    private static final String JGROUPS_SUBJECT = "jgroups";
     private static final Duration RETRY_WAIT_TIME = Duration.ofMinutes(1);
     private static final Duration BOOT_PERIOD = Duration.ofMillis(200);
 
@@ -258,22 +248,6 @@ public class CertificateReloadManager implements Lifecycle {
 
     private void retry(Runnable runnable, String traceId) {
         scheduledExecutorService.schedule(() -> blockingManager.runBlocking(runnable, traceId), RETRY_WAIT_TIME.toSeconds(), TimeUnit.SECONDS);
-    }
-
-    public static String generateSelfSignedCertificate(long validForSeconds) {
-        // We are not using Time Keycloak service in this method to follow CertificateUtilsProvider implementations
-        var endDate = Date.from(Instant.now().plus(validForSeconds, ChronoUnit.SECONDS));
-        var keyPair = KeyUtils.generateRsaKeyPair(2048);
-        var certificate = CertificateUtils.generateV1SelfSignedCertificate(keyPair, JGROUPS_SUBJECT, BigInteger.valueOf(System.currentTimeMillis()), endDate);
-
-        logger.debugf("Created JGroups certificate. Valid until %s", certificate.getNotAfter());
-
-        var entity = new JGroupsCertificate();
-        entity.setCertificate(certificate);
-        entity.setKeyPair(keyPair);
-        entity.setAlias(UUID.randomUUID().toString());
-        entity.setGeneratedMillis(System.currentTimeMillis());
-        return toJson(entity);
     }
 
     private record AutoCloseableLock(ReentrantLock innerLock) implements AutoCloseable {
