@@ -17,7 +17,28 @@
 
 package org.keycloak.spi.infinispan;
 
+import java.util.Optional;
+
+import org.infinispan.client.hotrod.configuration.Configuration;
 import org.keycloak.provider.Provider;
 
+/**
+ * A provider to create a configuration to the Hot Rod client.
+ */
 public interface CacheRemoteConfigProvider extends Provider {
+
+    /**
+     * Creates the {@link Configuration} for the Hot Rod client.
+     * <p>
+     * The optional signal if a Hot Rod client should be instantiated and started. If present, it assumes an external
+     * Infinispan cluster is ready and online, otherwise Keycloak fails to start.
+     *
+     * @return The {@link Configuration} for the Hot Rod client.
+     */
+    Optional<Configuration> configuration();
+
+    @Override
+    default void close() {
+        //no-op
+    }
 }

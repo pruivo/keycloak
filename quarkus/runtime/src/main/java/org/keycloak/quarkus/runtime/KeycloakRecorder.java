@@ -29,7 +29,6 @@ import io.vertx.ext.web.RoutingContext;
 import liquibase.Scope;
 import liquibase.servicelocator.ServiceLocator;
 import org.hibernate.cfg.AvailableSettings;
-import org.infinispan.commons.util.FileLookupFactory;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
@@ -50,21 +49,13 @@ import org.keycloak.theme.ClasspathThemeProviderFactory;
 import org.keycloak.truststore.TruststoreBuilder;
 import org.keycloak.userprofile.DeclarativeUserProfileProviderFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.lang.annotation.Annotation;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import static org.keycloak.quarkus.runtime.configuration.Configuration.getKcConfigValue;
 
 @Recorder
 public class KeycloakRecorder {
@@ -123,41 +114,9 @@ public class KeycloakRecorder {
 
     public RuntimeValue<CacheManagerFactory> createCacheInitializer() {
         try {
-            CacheManagerFactory cacheManagerFactory = new CacheManagerFactory(getInfinispanConfigFile());
-            return new RuntimeValue<>(cacheManagerFactory);
+            return new RuntimeValue<>(new CacheManagerFactory());
         } catch (Exception e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    private String getInfinispanConfigFile() {
-        String configFile = getKcConfigValue("spi-connections-infinispan-quarkus-config-file").getValue();
-
-        if (configFile == null) {
-            throw new IllegalArgumentException("Option 'configFile' needs to be specified");
-        }
-
-        Path configPath = Paths.get(configFile);
-        String path;
-
-        if (configPath.toFile().exists()) {
-            path = configPath.toFile().getAbsolutePath();
-        } else {
-            path = configPath.getFileName().toString();
-        }
-
-        logger.debugf("Infinispan configuration file: %s", path);
-
-        InputStream url = FileLookupFactory.newInstance().lookupFile(path, KeycloakRecorder.class.getClassLoader());
-
-        if (url == null) {
-            throw new IllegalArgumentException("Could not load cluster configuration file at [" + configPath + "]");
-        }
-
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(url))) {
-            return reader.lines().collect(Collectors.joining("\n"));
-        } catch (Exception cause) {
-            throw new RuntimeException("Failed to read clustering configuration from [" + url + "]", cause);
         }
     }
 

@@ -20,18 +20,12 @@ package org.keycloak.quarkus.runtime.storage.infinispan;
 import io.quarkus.arc.Arc;
 import org.keycloak.Config;
 import org.keycloak.cluster.ManagedCacheManagerProvider;
-import org.keycloak.models.KeycloakSession;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
  */
 @SuppressWarnings({"unchecked", "resource"})
 public final class QuarkusCacheManagerProvider implements ManagedCacheManagerProvider {
-
-    @Override
-    public <C> C getEmbeddedCacheManager(KeycloakSession keycloakSession, Config.Scope config) {
-        return (C) Arc.container().instance(CacheManagerFactory.class).get().getOrCreateEmbeddedCacheManager(keycloakSession);
-    }
 
     @Override
     public <C> C getRemoteCacheManager(Config.Scope config) {

@@ -37,6 +37,9 @@ import org.infinispan.manager.EmbeddedCacheManager;
 import org.infinispan.persistence.manager.PersistenceManager;
 import org.infinispan.persistence.remote.RemoteStore;
 import org.infinispan.remoting.transport.jgroups.JGroupsTransport;
+import org.infinispan.transaction.LockingMode;
+import org.infinispan.transaction.TransactionMode;
+import org.infinispan.transaction.lookup.EmbeddedTransactionManagerLookup;
 import org.infinispan.util.EmbeddedTimeService;
 import org.jboss.logging.Logger;
 import org.jgroups.JChannel;
@@ -191,6 +194,26 @@ public class InfinispanUtil {
         builder.memory()
                 .whenFull(EvictionStrategy.REMOVE)
                 .maxCount(InfinispanConnectionProvider.CRL_CACHE_DEFAULT_MAX);
+
+        return builder;
+    }
+
+    public static ConfigurationBuilder getRevisionCacheConfig(long maxEntries) {
+        var builder = createCacheConfigurationBuilder();
+        builder.simpleCache(false);
+        builder.invocationBatching().enable().transaction().transactionMode(TransactionMode.TRANSACTIONAL);
+
+        // Use Embedded manager even in managed ( wildfly/eap ) environment. We don't want infinispan to participate in global transaction
+        builder.transaction().transactionManagerLookup(new EmbeddedTransactionManagerLookup());
+
+        builder.transaction().lockingMode(LockingMode.PESSIMISTIC);
+        if (builder.memory().storage().canStoreReferences()) {
+            builder.encoding().mediaType(MediaType.APPLICATION_OBJECT_TYPE);
+        }
+
+        builder.memory()
+                .whenFull(EvictionStrategy.REMOVE)
+                .maxCount(maxEntries);
 
         return builder;
     }

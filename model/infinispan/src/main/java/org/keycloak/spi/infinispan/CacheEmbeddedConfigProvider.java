@@ -17,12 +17,14 @@
 
 package org.keycloak.spi.infinispan;
 
+import java.util.Optional;
+
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.keycloak.provider.Provider;
 
 public interface CacheEmbeddedConfigProvider extends Provider {
 
-    ConfigurationBuilderHolder configuration();
+    Optional<ConfigurationBuilderHolder> configuration();
 
     @Override
     default void close() {

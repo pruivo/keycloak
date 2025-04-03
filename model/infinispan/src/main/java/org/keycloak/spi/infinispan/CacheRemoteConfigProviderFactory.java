@@ -19,5 +19,10 @@ package org.keycloak.spi.infinispan;
 
 import org.keycloak.provider.ProviderFactory;
 
+/**
+ * A factory for {@link CacheRemoteConfigProvider}
+ *
+ * @see CacheRemoteConfigProvider
+ */
 public interface CacheRemoteConfigProviderFactory extends ProviderFactory<CacheRemoteConfigProvider> {
 }

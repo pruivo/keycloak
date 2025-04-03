@@ -17,26 +17,28 @@
 
 package org.keycloak.spi.infinispan.impl.embedded;
 
+import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import io.micrometer.core.instrument.Metrics;
 import org.infinispan.configuration.cache.ConfigurationBuilder;
+import org.infinispan.configuration.cache.HashConfiguration;
 import org.infinispan.configuration.cache.StatisticsConfigurationBuilder;
 import org.infinispan.configuration.global.ShutdownHookBehavior;
 import org.infinispan.configuration.parsing.ConfigurationBuilderHolder;
 import org.infinispan.configuration.parsing.ParserRegistry;
 import org.infinispan.metrics.config.MicrometerMeterRegisterConfigurationBuilder;
-import org.infinispan.persistence.remote.configuration.RemoteStoreConfigurationBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
+import org.keycloak.common.util.MultiSiteUtils;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.infinispan.util.InfinispanUtils;
@@ -49,9 +51,24 @@ import org.keycloak.spi.infinispan.CacheEmbeddedConfigProvider;
 import org.keycloak.spi.infinispan.CacheEmbeddedConfigProviderFactory;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
 
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLUSTERED_CACHE_NAMES;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.ALL_CACHES_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHORIZATION_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHORIZATION_REVISIONS_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLIENT_SESSION_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLUSTERED_MAX_COUNT_CACHES;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CRL_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.LOCAL_CACHE_NAMES;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.LOCAL_MAX_COUNT_CACHES;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_CLIENT_SESSION_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.OFFLINE_USER_SESSION_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.REALM_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.REALM_REVISIONS_CACHE_DEFAULT_MAX;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.REALM_REVISIONS_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_REVISIONS_CACHE_DEFAULT_MAX;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_REVISIONS_CACHE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.USER_SESSION_CACHE_NAME;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
 
 public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedConfigProviderFactory, CacheEmbeddedConfigProvider {
@@ -83,8 +100,8 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     }
 
     @Override
-    public ConfigurationBuilderHolder configuration() {
-        return builderHolder;
+    public Optional<ConfigurationBuilderHolder> configuration() {
+        return Optional.ofNullable(builderHolder);
     }
 
     @Override
@@ -115,71 +132,69 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
             if (builderHolder != null) {
                 return;
             }
-            builderHolder = Objects.requireNonNull(createConfiguration(factory));
+            try {
+                builderHolder = createConfiguration(factory);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
-    protected ConfigurationBuilderHolder createConfiguration(KeycloakSessionFactory factory) {
+    protected ConfigurationBuilderHolder createConfiguration(KeycloakSessionFactory factory) throws IOException {
+        var holder = parseConfiguration(keycloakConfig);
+        if (holder == null) {
+            //no configuration file set
+            return null;
+        }
         if (InfinispanUtils.isRemoteInfinispan()) {
-            return createMultiSiteConfiguration(keycloakConfig);
+            return createMultiSiteConfiguration(holder, keycloakConfig);
         }
         if (Profile.isFeatureEnabled(Profile.Feature.PERSISTENT_USER_SESSIONS)) {
-            return createPersistentUserSessionsConfiguration(keycloakConfig, factory);
+            return createPersistentUserSessionsConfiguration(holder, keycloakConfig, factory);
         }
-        return createVolatileUserSessionsConfiguration(keycloakConfig, factory);
+        return createVolatileUserSessionsConfiguration(holder, keycloakConfig, factory);
     }
 
-    private static ConfigurationBuilderHolder createVolatileUserSessionsConfiguration(Config.Scope keycloakConfig, KeycloakSessionFactory factory) {
-        var holder = parseConfiguration(keycloakConfig);
-        singleSiteConfiguration(holder);
-        configureCacheMaxCount(keycloakConfig, holder, Arrays.stream(InfinispanConnectionProvider.LOCAL_MAX_COUNT_CACHES));
-        configureMetrics(keycloakConfig, holder);
+    private static ConfigurationBuilderHolder createVolatileUserSessionsConfiguration(ConfigurationBuilderHolder holder, Config.Scope keycloakConfig, KeycloakSessionFactory factory) {
+        singleSiteConfiguration(keycloakConfig, holder);
         return holder;
     }
 
-    private static ConfigurationBuilderHolder createPersistentUserSessionsConfiguration(Config.Scope keycloakConfig, KeycloakSessionFactory factory) {
-        var holder = parseConfiguration(keycloakConfig);
-        singleSiteConfiguration(holder);
-        configureCacheMaxCount(keycloakConfig, holder,
-                Stream.concat(
-                        Arrays.stream(InfinispanConnectionProvider.LOCAL_MAX_COUNT_CACHES),
-                        Arrays.stream(InfinispanConnectionProvider.CLUSTERED_MAX_COUNT_CACHES)
-                ));
-        configureMetrics(keycloakConfig, holder);
+    private static ConfigurationBuilderHolder createPersistentUserSessionsConfiguration(ConfigurationBuilderHolder holder, Config.Scope keycloakConfig, KeycloakSessionFactory factory) {
+        singleSiteConfiguration(keycloakConfig, holder);
+        configureCacheMaxCount(keycloakConfig, holder, Arrays.stream(CLUSTERED_MAX_COUNT_CACHES));
+        configureSessionsCachesForPersistentSessions(holder);
         return holder;
     }
 
-    private static ConfigurationBuilderHolder createMultiSiteConfiguration(Config.Scope keycloakConfig) {
-        var holder = parseConfiguration(keycloakConfig);
+    private static ConfigurationBuilderHolder createMultiSiteConfiguration(ConfigurationBuilderHolder holder, Config.Scope keycloakConfig) {
         removeClusteredCaches(holder);
-        checkForRemoteStores(holder);
-        checkOrConfigureCaches(holder, Arrays.stream(LOCAL_CACHE_NAMES));
+        checkCachesExist(holder, Arrays.stream(LOCAL_CACHE_NAMES));
+        configureMetrics(keycloakConfig, holder);
         // Disable JGroups, not required when the data is stored in the Remote Cache.
         // The existing caches are local and do not require JGroups to work properly.
         holder.getGlobalConfigurationBuilder().nonClusteredDefault();
-        configureCacheMaxCount(keycloakConfig, holder, Arrays.stream(InfinispanConnectionProvider.LOCAL_MAX_COUNT_CACHES));
-        configureMetrics(keycloakConfig, holder);
         return holder;
     }
 
-    private static ConfigurationBuilderHolder parseConfiguration(Config.Scope keycloakConfig) {
+    private static ConfigurationBuilderHolder parseConfiguration(Config.Scope keycloakConfig) throws IOException {
         var config = keycloakConfig.get("config");
-        var holder = new ParserRegistry().parse(config);
+        if (config == null) {
+            return null;
+        }
+        var holder = new ParserRegistry().parseFile(config);
         // We must disable the Infinispan default ShutdownHook as we manage the EmbeddedCacheManager lifecycle explicitly
         // with #shutdown and multiple calls to EmbeddedCacheManager#stop can lead to Exceptions being thrown
         holder.getGlobalConfigurationBuilder().shutdown().hookBehavior(ShutdownHookBehavior.DONT_REGISTER);
         Marshalling.configure(holder.getGlobalConfigurationBuilder());
+        configureLocalCaches(keycloakConfig, holder);
         return holder;
     }
 
-    private static void singleSiteConfiguration(ConfigurationBuilderHolder holder) {
+    private static void singleSiteConfiguration(Config.Scope config, ConfigurationBuilderHolder holder) {
+        configureMetrics(config, holder);
+        checkCachesExist(holder, Arrays.stream(ALL_CACHES_NAME));
         validateWorkCacheConfiguration(holder);
-        checkForRemoteStores(holder);
-        checkOrConfigureCaches(holder, Stream.concat(
-                Arrays.stream(LOCAL_CACHE_NAMES),
-                Arrays.stream(CLUSTERED_CACHE_NAMES)
-        ));
-
     }
 
     private static void validateWorkCacheConfiguration(ConfigurationBuilderHolder builder) {
@@ -203,12 +218,14 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     }
 
     private static void configureCacheMaxCount(Config.Scope keycloakConfig, ConfigurationBuilderHolder holder, Stream<String> caches) {
-        caches.forEach(name -> {
-            var maxCount = keycloakConfig.getInt("maxCount" + name);
-            if (maxCount != null) {
-                holder.getNamedConfigurationBuilders().get(name).memory().maxCount(maxCount);
+        for (var it = caches.iterator(); it.hasNext(); ) {
+            var name = it.next();
+            var builder = holder.getNamedConfigurationBuilders().get(name);
+            if (builder == null) {
+                throw cacheNotFound(name);
             }
-        });
+            setMemoryMaxCount(keycloakConfig, name, builder);
+        }
     }
 
     private static void configureMetrics(Config.Scope keycloakConfig, ConfigurationBuilderHolder holder) {
@@ -226,42 +243,81 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
         }
     }
 
-    private static void checkOrConfigureCaches(ConfigurationBuilderHolder holder, Stream<String> caches)  {
+    private static void checkCachesExist(ConfigurationBuilderHolder holder, Stream<String> caches) {
         for (var it = caches.iterator() ; it.hasNext() ; ) {
             var cache = it.next();
             var builder = holder.getNamedConfigurationBuilders().get(cache);
-            if (builder != null) {
-                continue;
-            }
-            builder = DEFAULT_CONFIGS.getOrDefault(cache, TO_NULL).get();
             if (builder == null) {
-                throw new IllegalStateException("Infinispan cache '%s' not found. Make sure it is defined in your XML configuration file.".formatted(cache));
-            }
-            holder.getNamedConfigurationBuilders().put(cache, builder);
-        }
-    }
-
-    private static void checkForRemoteStores(ConfigurationBuilderHolder builder) {
-        if (Profile.isFeatureEnabled(Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE) && Profile.isFeatureEnabled(Profile.Feature.MULTI_SITE)) {
-            logger.fatalf("Feature %s is now deprecated.%nFor multi-site (cross-dc) support, enable only %s.",
-                    Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey(), Profile.Feature.MULTI_SITE.getKey());
-            throw new RuntimeException("The features " + Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey() + " and " + Profile.Feature.MULTI_SITE.getKey() + " must not be enabled at the same time.");
-        }
-        if (Profile.isFeatureEnabled(Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE) && Profile.isFeatureEnabled(Profile.Feature.CLUSTERLESS)) {
-            logger.fatalf("Feature %s is now deprecated.%nFor multi-site (cross-dc) support, enable only %s.",
-                    Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey(), Profile.Feature.CLUSTERLESS.getKey());
-            throw new RuntimeException("The features " + Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey() + " and " + Profile.Feature.CLUSTERLESS.getKey() + " must not be enabled at the same time.");
-        }
-        if (!Profile.isFeatureEnabled(Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE)) {
-            if (builder.getNamedConfigurationBuilders().values().stream().anyMatch(DefaultCacheEmbeddedConfigProviderFactory::hasRemoteStore)) {
-                logger.fatalf("Remote stores are not supported for embedded caches as feature %s is not enabled. This feature is disabled by default as it is now deprecated.%nFor keeping user sessions across restarts, use feature %s which is enabled by default.%nFor multi-site (cross-dc) support, enable %s.",
-                        Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey(), Profile.Feature.PERSISTENT_USER_SESSIONS.getKey(), Profile.Feature.MULTI_SITE.getKey());
-                throw new RuntimeException("Remote store is not supported as feature " + Profile.Feature.CACHE_EMBEDDED_REMOTE_STORE.getKey() + " is not enabled.");
+                throw cacheNotFound(cache);
             }
         }
     }
 
-    private static boolean hasRemoteStore(ConfigurationBuilder builder) {
-        return builder.persistence().stores().stream().anyMatch(RemoteStoreConfigurationBuilder.class::isInstance);
+    private static void configureLocalCaches(Config.Scope keycloakConfig, ConfigurationBuilderHolder holder) {
+        // configure local caches except revision caches
+        for (var name : LOCAL_MAX_COUNT_CACHES) {
+            var builder = holder.getNamedConfigurationBuilders().get(name);
+            if (builder == null) {
+                builder = DEFAULT_CONFIGS.getOrDefault(name, TO_NULL).get();
+            }
+            if (builder == null) {
+                throw cacheNotFound(name);
+            }
+            setMemoryMaxCount(keycloakConfig, name, builder);
+            holder.getNamedConfigurationBuilders().put(name, builder);
+        }
+        // configure revision caches
+        configureRevisionCache(holder, REALM_CACHE_NAME, REALM_REVISIONS_CACHE_NAME, REALM_REVISIONS_CACHE_DEFAULT_MAX);
+        configureRevisionCache(holder, USER_CACHE_NAME, USER_REVISIONS_CACHE_NAME, USER_REVISIONS_CACHE_DEFAULT_MAX);
+        configureRevisionCache(holder, AUTHORIZATION_CACHE_NAME, AUTHORIZATION_REVISIONS_CACHE_NAME, AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX);
+        // check all caches are defined
+        checkCachesExist(holder, Arrays.stream(LOCAL_CACHE_NAMES));
+    }
+
+    private static void setMemoryMaxCount(Config.Scope keycloakConfig, String name, ConfigurationBuilder builder) {
+        var maxCount = keycloakConfig.getInt(name + "MaxCount");
+        if (maxCount != null) {
+            builder.memory().maxCount(maxCount);
+        }
+    }
+
+    private static IllegalStateException cacheNotFound(String cache) {
+        return new IllegalStateException("Infinispan cache '%s' not found. Make sure it is defined in your XML configuration file.".formatted(cache));
+    }
+
+    private static void configureRevisionCache(ConfigurationBuilderHolder holder, String baseCache, String revisionCache, long defaultMaxEntries) {
+        var maxCount = holder.getNamedConfigurationBuilders().get(baseCache).memory().maxCount();
+        maxCount = maxCount > 0 ? 2 * maxCount : defaultMaxEntries;
+        holder.getNamedConfigurationBuilders().put(revisionCache, InfinispanUtil.getRevisionCacheConfig(maxCount));
+    }
+
+    private static void configureSessionsCachesForPersistentSessions(ConfigurationBuilderHolder builder) {
+        Stream.of(USER_SESSION_CACHE_NAME, CLIENT_SESSION_CACHE_NAME, OFFLINE_USER_SESSION_CACHE_NAME, OFFLINE_CLIENT_SESSION_CACHE_NAME)
+                .forEach(cacheName -> {
+                    var configurationBuilder = builder.getNamedConfigurationBuilders().get(cacheName);
+                    if (MultiSiteUtils.isPersistentSessionsEnabled()) {
+                        if (configurationBuilder.memory().maxCount() == -1) {
+                            logger.infof("Persistent user sessions enabled and no memory limit found in configuration. Setting max entries for %s to 10000 entries.", cacheName);
+                            configurationBuilder.memory().maxCount(10000);
+                        }
+                        /* The number of owners for these caches then need to be set to `1` to avoid backup owners with inconsistent data.
+                         As primary owner evicts a key based on its locally evaluated maxCount setting, it wouldn't tell the backup owner about this, and then the backup owner would be left with a soon-to-be-outdated key.
+                         While a `remove` is forwarded to the backup owner regardless if the key exists on the primary owner, a `computeIfPresent` is not, and it would leave a backup owner with an outdated key.
+                         With the number of owners set to `1`, there will be no backup owners, so this is the setting to choose with persistent sessions enabled to ensure consistent data in the caches. */
+                        configurationBuilder.clustering().hash().numOwners(1);
+                    } else {
+                        if (configurationBuilder.memory().maxCount() != -1) {
+                            logger.warnf("Persistent user sessions disabled and memory limit found in configuration for cache %s. This might be a misconfiguration! Update your Infinispan configuration to remove this message.", cacheName);
+                        }
+                        if (configurationBuilder.memory().maxCount() == 10000 && (cacheName.equals(USER_SESSION_CACHE_NAME) || cacheName.equals(CLIENT_SESSION_CACHE_NAME))) {
+                            logger.warnf("Persistent user sessions disabled and memory limit is set to default value 10000. Ignoring cache limits to avoid losing sessions for cache %s.", cacheName);
+                            configurationBuilder.memory().maxCount(-1);
+                        }
+                        if (configurationBuilder.clustering().hash().attributes().attribute(HashConfiguration.NUM_OWNERS).get() == 1
+                                && configurationBuilder.persistence().stores().isEmpty()) {
+                            logger.warnf("Number of owners is one for cache %s, and no persistence is configured. This might be a misconfiguration as you will lose data when a single node is restarted!", cacheName);
+                        }
+                    }
+                });
     }
 }

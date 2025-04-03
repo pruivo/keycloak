@@ -27,7 +27,13 @@ import org.keycloak.models.KeycloakSession;
  */
 public interface ManagedCacheManagerProvider {
 
-    <C> C getEmbeddedCacheManager(KeycloakSession keycloakSession, Config.Scope config);
+    /**
+     * @deprecated to be removed without replacement. Use the CacheEmbeddedConfigProvider to create the Infinispan configuration.
+     */
+    @Deprecated(since = "26.3", forRemoval = true)
+    default <C> C getEmbeddedCacheManager(KeycloakSession keycloakSession, Config.Scope config) {
+        throw new UnsupportedOperationException();
+    }
 
     /**
      * @return A RemoteCacheManager if the features {@link org.keycloak.common.Profile.Feature#CLUSTERLESS} or {@link org.keycloak.common.Profile.Feature#MULTI_SITE}  is enabled, {@code null} otherwise.
