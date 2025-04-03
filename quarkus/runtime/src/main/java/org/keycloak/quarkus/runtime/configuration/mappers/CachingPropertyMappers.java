@@ -11,6 +11,7 @@ import java.util.function.BooleanSupplier;
 import io.smallrye.config.ConfigSourceInterceptorContext;
 import org.keycloak.common.Profile;
 import org.keycloak.config.CachingOptions;
+import org.keycloak.config.MetricsOptions;
 import org.keycloak.config.Option;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.quarkus.runtime.Environment;
@@ -51,7 +52,7 @@ final class CachingPropertyMappers {
                             } else
                                 return null;
                         })
-                        .to("kc.spi-connections-infinispan-quarkus-config-file")
+                        .to("kc.spi-cache-embedded-default-config-file")
                         .transformer(CachingPropertyMappers::resolveConfigFile)
                         .validator(s -> {
                             if (!Files.exists(Paths.get(resolveConfigFile(s, null)))) {
@@ -126,6 +127,8 @@ final class CachingPropertyMappers {
                         .build(),
                 fromOption(CachingOptions.CACHE_METRICS_HISTOGRAMS_ENABLED)
                         .isEnabled(MetricsPropertyMappers::metricsEnabled, MetricsPropertyMappers.METRICS_ENABLED_MSG)
+                        .to("kc.spi-cache-embedded-default-metrics-histograms-enabled")
+                        .paramLabel("enabled")
                         .build()
         );
 

@@ -27,7 +27,7 @@ public class CacheEmbeddedConfigProviderSpi implements Spi {
 
     @Override
     public String getName() {
-        return "cacheEmbeddedConfig";
+        return "cacheEmbedded";
     }
 
     @Override

@@ -39,6 +39,9 @@ import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
 import org.keycloak.common.util.MultiSiteUtils;
+import org.keycloak.config.CachingOptions;
+import org.keycloak.config.MetricsOptions;
+import org.keycloak.config.Option;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.connections.infinispan.InfinispanUtil;
 import org.keycloak.infinispan.util.InfinispanUtils;
@@ -47,6 +50,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.Provider;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.provider.ProviderConfigurationBuilder;
 import org.keycloak.spi.infinispan.CacheEmbeddedConfigProvider;
 import org.keycloak.spi.infinispan.CacheEmbeddedConfigProviderFactory;
 import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
@@ -74,11 +78,18 @@ import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.W
 public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedConfigProviderFactory, CacheEmbeddedConfigProvider {
 
     private static final Logger logger = Logger.getLogger(MethodHandles.lookup().lookupClass());
+
     // Map with the default cache configuration if the cache is not present in the XML.
     private static final Map<String, Supplier<ConfigurationBuilder>> DEFAULT_CONFIGS = Map.of(
             CRL_CACHE_NAME, InfinispanUtil::getCrlCacheConfig
     );
     private static final Supplier<ConfigurationBuilder> TO_NULL = () -> null;
+
+    // Configuration
+    private static final String CONFIG = "config";
+    private static final String METRICS = "metricsEnabled";
+    private static final String HISTOGRAMS = "histogramsEnabled";
+    private static final String MAX_COUNT_SUFFIX = "MaxCount";
 
     private volatile ConfigurationBuilderHolder builderHolder;
     private volatile Config.Scope keycloakConfig;
@@ -116,7 +127,15 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
 
     @Override
     public List<ProviderConfigProperty> getConfigMetadata() {
-        return CacheEmbeddedConfigProviderFactory.super.getConfigMetadata();
+        var builder = ProviderConfigurationBuilder.create();
+        copyFromOption(builder, CONFIG, "file", ProviderConfigProperty.STRING_TYPE, CachingOptions.CACHE_CONFIG_FILE);
+        copyFromOption(builder, HISTOGRAMS, "enabled", ProviderConfigProperty.BOOLEAN_TYPE, CachingOptions.CACHE_METRICS_HISTOGRAMS_ENABLED);
+        copyFromOption(builder, METRICS, "enabled", ProviderConfigProperty.BOOLEAN_TYPE, MetricsOptions.METRICS_ENABLED);
+        Stream.concat(
+                Arrays.stream(LOCAL_CACHE_NAMES),
+                Arrays.stream(CLUSTERED_MAX_COUNT_CACHES)
+        ).forEach(name -> copyFromOption(builder, maxCountConfigKey(name), "max-count", ProviderConfigProperty.INTEGER_TYPE, CachingOptions.maxCountOption(name)));
+        return builder.build();
     }
 
     @Override
@@ -178,7 +197,7 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     }
 
     private static ConfigurationBuilderHolder parseConfiguration(Config.Scope keycloakConfig) throws IOException {
-        var config = keycloakConfig.get("config");
+        var config = keycloakConfig.get(CONFIG);
         if (config == null) {
             return null;
         }
@@ -229,12 +248,15 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     }
 
     private static void configureMetrics(Config.Scope keycloakConfig, ConfigurationBuilderHolder holder) {
-        if (keycloakConfig.getBoolean("metricsEnabled", Boolean.FALSE)) {
-            holder.getGlobalConfigurationBuilder().addModule(MicrometerMeterRegisterConfigurationBuilder.class)
+        if (keycloakConfig.getBoolean(METRICS, Boolean.FALSE)) {
+            var histograms = keycloakConfig.getBoolean(HISTOGRAMS, Boolean.FALSE);
+            var builder = holder.getGlobalConfigurationBuilder();
+            builder.addModule(MicrometerMeterRegisterConfigurationBuilder.class)
                     .meterRegistry(Metrics.globalRegistry);
-            holder.getGlobalConfigurationBuilder().cacheContainer().statistics(true);
-            holder.getGlobalConfigurationBuilder().metrics().namesAsTags(true);
-            holder.getGlobalConfigurationBuilder().metrics().histograms(keycloakConfig.getBoolean("histogramEnabled", Boolean.FALSE));
+            builder.cacheContainer().statistics(true);
+            builder.metrics()
+                    .namesAsTags(true)
+                    .histograms(histograms);
             holder.getNamedConfigurationBuilders()
                     .values()
                     .stream()
@@ -275,7 +297,7 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     }
 
     private static void setMemoryMaxCount(Config.Scope keycloakConfig, String name, ConfigurationBuilder builder) {
-        var maxCount = keycloakConfig.getInt(name + "MaxCount");
+        var maxCount = keycloakConfig.getInt(maxCountConfigKey(name));
         if (maxCount != null) {
             builder.memory().maxCount(maxCount);
         }
@@ -319,5 +341,19 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
                         }
                     }
                 });
+    }
+
+    private static String maxCountConfigKey(String name) {
+        return name + MAX_COUNT_SUFFIX;
+    }
+
+    private static void copyFromOption(ProviderConfigurationBuilder builder, String name, String label, String type, Option<?> option) {
+        var property = builder.property()
+                .name(name)
+                .helpText(option.getDescription())
+                .label(label)
+                .type(type);
+        option.getDefaultValue().ifPresent(property::defaultValue);
+        property.add();
     }
 }
