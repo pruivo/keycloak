@@ -25,6 +25,7 @@ public class CachingOptions {
     public static final String CACHE_REMOTE_TLS_ENABLED_PROPERTY = CACHE_REMOTE_PREFIX + "-tls-enabled";
 
     private static final String CACHE_METRICS_PREFIX = "cache-metrics";
+    public static final String CACHE_METRICS_ENABLED_PROPERTY = CACHE_METRICS_PREFIX + "-enabled";
     public static final String CACHE_METRICS_HISTOGRAMS_ENABLED_PROPERTY = CACHE_METRICS_PREFIX + "-histograms-enabled";
 
     public static final String[] LOCAL_MAX_COUNT_CACHES = new String[]{"authorization", "crl", "keys", "realms", "users", };
@@ -134,6 +135,12 @@ public class CachingOptions {
                             + "It is optional if connecting to an unsecure external Infinispan cluster. "
                             + "If the option is specified, '%s' is required as well.",
                     CACHE_REMOTE_USERNAME_PROPERTY))
+            .build();
+
+    public static final Option<Boolean> CACHE_METRICS_ENABLED = new OptionBuilder<>(CACHE_METRICS_ENABLED_PROPERTY, Boolean.class)
+            .category(OptionCategory.CACHE)
+            .defaultValue(Boolean.TRUE)
+            .description("Enable metrics for the embedded caches.")
             .build();
 
     public static final Option<Boolean> CACHE_METRICS_HISTOGRAMS_ENABLED = new OptionBuilder<>(CACHE_METRICS_HISTOGRAMS_ENABLED_PROPERTY, Boolean.class)

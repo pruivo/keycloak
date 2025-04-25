@@ -125,6 +125,10 @@ final class CachingPropertyMappers {
                         .paramLabel("password")
                         .isMasked(true)
                         .build(),
+                fromOption(CachingOptions.CACHE_METRICS_ENABLED)
+                        .isEnabled(MetricsPropertyMappers::metricsEnabled, MetricsPropertyMappers.METRICS_ENABLED_MSG)
+                        .to("kc.spi-cache-embedded-default-metrics-enabled")
+                        .build(),
                 fromOption(CachingOptions.CACHE_METRICS_HISTOGRAMS_ENABLED)
                         .isEnabled(MetricsPropertyMappers::metricsEnabled, MetricsPropertyMappers.METRICS_ENABLED_MSG)
                         .to("kc.spi-cache-embedded-default-metrics-histograms-enabled")

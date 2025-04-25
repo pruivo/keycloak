@@ -36,7 +36,6 @@ import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.Profile;
 import org.keycloak.config.CachingOptions;
-import org.keycloak.config.MetricsOptions;
 import org.keycloak.infinispan.module.configuration.global.KeycloakConfigurationBuilder;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.marshalling.Marshalling;
@@ -116,8 +115,8 @@ public class DefaultCacheEmbeddedConfigProviderFactory implements CacheEmbeddedC
     public List<ProviderConfigProperty> getConfigMetadata() {
         var builder = ProviderConfigurationBuilder.create();
         Util.copyFromOption(builder, CONFIG, "file", ProviderConfigProperty.STRING_TYPE, CachingOptions.CACHE_CONFIG_FILE, false);
+        Util.copyFromOption(builder, METRICS, "enabled", ProviderConfigProperty.BOOLEAN_TYPE, CachingOptions.CACHE_METRICS_ENABLED, false);
         Util.copyFromOption(builder, HISTOGRAMS, "enabled", ProviderConfigProperty.BOOLEAN_TYPE, CachingOptions.CACHE_METRICS_HISTOGRAMS_ENABLED, false);
-        Util.copyFromOption(builder, METRICS, "enabled", ProviderConfigProperty.BOOLEAN_TYPE, MetricsOptions.INFINISPAN_METRICS_ENABLED, false);
         Stream.concat(Arrays.stream(LOCAL_CACHE_NAMES), Arrays.stream(CLUSTERED_MAX_COUNT_CACHES))
                 .forEach(name -> Util.copyFromOption(builder, CacheConfigurator.maxCountConfigKey(name), "max-count", ProviderConfigProperty.INTEGER_TYPE, CachingOptions.maxCountOption(name), false));
         createTopologyProperties(builder);

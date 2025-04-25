@@ -77,6 +77,9 @@ Cache:
                        cache. Available only when embedded Infinispan clusters configured.
 --cache-embedded-users-max-count <max-count>
                      The maximum number of entries that can be stored in-memory by the users cache.
+--cache-metrics-enabled <true|false>
+                     Enable metrics for the embedded caches. Default: true. Available only when
+                       metrics are enabled.
 --cache-metrics-histograms-enabled <true|false>
                      Enable histograms for metrics for the embedded caches. Default: false.
                        Available only when metrics are enabled.
