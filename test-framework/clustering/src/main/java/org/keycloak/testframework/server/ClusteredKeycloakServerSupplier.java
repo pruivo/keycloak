@@ -3,9 +3,9 @@ package org.keycloak.testframework.server;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
-public class ContainerKeycloakClusterSupplier extends AbstractKeycloakServerSupplier {
+public class ClusteredKeycloakServerSupplier extends AbstractKeycloakServerSupplier {
 
-    private static final Logger LOGGER = Logger.getLogger(ContainerKeycloakClusterSupplier.class);
+    private static final Logger LOGGER = Logger.getLogger(ClusteredKeycloakServerSupplier.class);
 
     @ConfigProperty(name = "debug", defaultValue = "false")
     boolean debug = false;
@@ -13,12 +13,12 @@ public class ContainerKeycloakClusterSupplier extends AbstractKeycloakServerSupp
     @ConfigProperty(name = "numContainer", defaultValue = "2")
     int numContainers = 2;
 
-    @ConfigProperty(name = "images", defaultValue = ContainerKeycloakCluster.SNAPSHOT_IMAGE)
-    String images = ContainerKeycloakCluster.SNAPSHOT_IMAGE;
+    @ConfigProperty(name = "images", defaultValue = ClusteredKeycloakServer.SNAPSHOT_IMAGE)
+    String images = ClusteredKeycloakServer.SNAPSHOT_IMAGE;
 
     @Override
     public KeycloakServer getServer() {
-        return new ContainerKeycloakCluster(numContainers, images, debug);
+        return new ClusteredKeycloakServer(numContainers, images, debug);
     }
 
     @Override

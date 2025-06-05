@@ -29,7 +29,7 @@ import org.testcontainers.images.RemoteDockerImage;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.LazyFuture;
 
-public class ContainerKeycloakCluster implements KeycloakServer {
+public class ClusteredKeycloakServer implements KeycloakServer {
 
     private static final boolean MANUAL_STOP = true;
     private static final int REQUEST_PORT = 8080;
@@ -51,7 +51,7 @@ public class ContainerKeycloakCluster implements KeycloakServer {
         return DockerKeycloakDistribution.createImage(quarkusModule,true);
     }
 
-    public ContainerKeycloakCluster(int mumServers, String images, boolean debug) {
+    public ClusteredKeycloakServer(int mumServers, String images, boolean debug) {
         containers = new DockerKeycloakDistribution[mumServers];
         this.images = images;
         this.debug = debug;
