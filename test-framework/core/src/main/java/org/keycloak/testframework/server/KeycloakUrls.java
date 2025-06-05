@@ -67,8 +67,4 @@ public class KeycloakUrls {
     public String getToken(String realm) {
         return baseUrl + "/realms/" + realm + "/protocol/" + OIDCLoginProtocol.LOGIN_PROTOCOL + "/token";
     }
-
-    public boolean isEnabled() {
-        return baseUrl != null && managementBaseUrl != null;
-    }
 }

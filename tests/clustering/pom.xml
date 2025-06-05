@@ -7,20 +7,39 @@
         <groupId>org.keycloak.tests</groupId>
         <artifactId>keycloak-tests-parent</artifactId>
         <version>999.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
     <artifactId>keycloak-tests-clustering</artifactId>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.keycloak.testframework</groupId>
+                <artifactId>keycloak-test-framework-bom</artifactId>
+                <version>${project.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
             <groupId>org.keycloak.testframework</groupId>
             <artifactId>keycloak-test-framework-core</artifactId>
-            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak.testframework</groupId>
+            <artifactId>keycloak-test-framework-junit5-config</artifactId>
         </dependency>
         <dependency>
             <groupId>org.keycloak.testframework</groupId>
             <artifactId>keycloak-test-framework-clustering</artifactId>
-            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak.testframework</groupId>
+            <artifactId>keycloak-test-framework-db-postgres</artifactId>
         </dependency>
     </dependencies>
 </project>

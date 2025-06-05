@@ -21,26 +21,22 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.keycloak.testframework.annotations.InjectKeycloakUrls;
+import org.keycloak.testframework.annotations.InjectLoadBalancer;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
-import org.keycloak.testframework.server.KeycloakUrls;
+import org.keycloak.testframework.clustering.LoadBalancer;
 
 @KeycloakIntegrationTest
 public class MixedVersionClusterTest {
 
-    @InjectKeycloakUrls
-    KeycloakUrls node0Url;
-
-    @InjectKeycloakUrls(nodeIndex = 1)
-    KeycloakUrls node1Url;
+    @InjectLoadBalancer
+    LoadBalancer loadBalancer;
 
     @Test
     public void testUrls() throws InterruptedException {
         // TODO annotation based to skip if running in non-clustered mode.
-        Assumptions.assumeTrue(node0Url.isEnabled());
-        Assumptions.assumeTrue(node1Url.isEnabled());
-        System.out.println("url0->" + node0Url.getBaseUrl());
-        System.out.println("url1->" + node1Url.getBaseUrl());
+        Assumptions.assumeTrue(loadBalancer.clusterSize() == 2);
+        System.out.println("url0->" + loadBalancer.node(0).getBaseUrl());
+        System.out.println("url1->" + loadBalancer.node(1).getBaseUrl());
         Thread.sleep(TimeUnit.MINUTES.toMillis(1));
     }
 }
