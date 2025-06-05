@@ -37,9 +37,16 @@ public final class DockerKeycloakDistribution implements KeycloakDistribution {
 
         final ToStringConsumer stdOut = new ToStringConsumer();
         final ToStringConsumer stdErr = new ToStringConsumer();
+        final Consumer<OutputFrame> customLogConsumer;
+        public BackupConsumer(Consumer<OutputFrame> customLogConsumer) {
+            this.customLogConsumer = customLogConsumer;
+        }
 
         @Override
         public void accept(OutputFrame t) {
+            if (customLogConsumer != null) {
+                customLogConsumer.accept(t);
+            }
             if (t.getType() == OutputType.STDERR) {
                 stdErr.accept(t);
             } else if (t.getType() == OutputType.STDOUT) {
@@ -59,9 +66,8 @@ public final class DockerKeycloakDistribution implements KeycloakDistribution {
 
     private String stdout = "";
     private String stderr = "";
-    private BackupConsumer backupConsumer = new BackupConsumer();
-
-
+    private BackupConsumer backupConsumer;
+    private Consumer<OutputFrame> customLogConsumer;
     private GenericContainer<?> keycloakContainer = null;
     private String containerId = null;
 
@@ -86,6 +92,10 @@ public final class DockerKeycloakDistribution implements KeycloakDistribution {
     @Override
     public void setEnvVar(String name, String value) {
         this.envVars.put(name, value);
+    }
+
+    public void setCustomLogConsumer(Consumer<OutputFrame> customLogConsumer) {
+        this.customLogConsumer = customLogConsumer;
     }
 
     private GenericContainer<?> getKeycloakContainer() {
@@ -137,7 +147,7 @@ public final class DockerKeycloakDistribution implements KeycloakDistribution {
             this.stdout = "";
             this.stderr = "";
             this.containerId = null;
-            this.backupConsumer = new BackupConsumer();
+            this.backupConsumer = new BackupConsumer(customLogConsumer);
 
             keycloakContainer = getKeycloakContainer();
 

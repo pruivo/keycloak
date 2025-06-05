@@ -7,9 +7,6 @@ public class ClusteredKeycloakServerSupplier extends AbstractKeycloakServerSuppl
 
     private static final Logger LOGGER = Logger.getLogger(ClusteredKeycloakServerSupplier.class);
 
-    @ConfigProperty(name = "debug", defaultValue = "false")
-    boolean debug = false;
-
     @ConfigProperty(name = "numContainer", defaultValue = "2")
     int numContainers = 2;
 
@@ -18,7 +15,7 @@ public class ClusteredKeycloakServerSupplier extends AbstractKeycloakServerSuppl
 
     @Override
     public KeycloakServer getServer() {
-        return new ClusteredKeycloakServer(numContainers, images, debug);
+        return new ClusteredKeycloakServer(numContainers, images);
     }
 
     @Override

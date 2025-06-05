@@ -24,7 +24,9 @@ import java.util.Arrays;
 import java.util.Objects;
 
 import io.quarkus.bootstrap.utils.BuildToolHelper;
+import org.jboss.logging.Logger;
 import org.keycloak.it.utils.DockerKeycloakDistribution;
+import org.keycloak.testframework.database.JBossLogConsumer;
 import org.testcontainers.images.RemoteDockerImage;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.LazyFuture;
@@ -38,7 +40,6 @@ public class ClusteredKeycloakServer implements KeycloakServer {
 
     private final DockerKeycloakDistribution[] containers;
     private final String images;
-    private final boolean debug;
 
     private static LazyFuture<String> defaultImage() {
         Path classPathDir;
@@ -51,10 +52,9 @@ public class ClusteredKeycloakServer implements KeycloakServer {
         return DockerKeycloakDistribution.createImage(quarkusModule,true);
     }
 
-    public ClusteredKeycloakServer(int mumServers, String images, boolean debug) {
+    public ClusteredKeycloakServer(int mumServers, String images) {
         containers = new DockerKeycloakDistribution[mumServers];
         this.images = images;
-        this.debug = debug;
     }
 
     @Override
@@ -84,11 +84,12 @@ public class ClusteredKeycloakServer implements KeycloakServer {
             } else {
                 resolvedImage = new RemoteDockerImage(DockerImageName.parse(imagePeServer[i]));
             }
-            var container = new DockerKeycloakDistribution(debug, MANUAL_STOP, REQUEST_PORT, exposedPorts, resolvedImage);
+            var container = new DockerKeycloakDistribution(false, MANUAL_STOP, REQUEST_PORT, exposedPorts, resolvedImage);
             containers[i] = container;
 
             copyProvidersAndConfigs(container, configBuilder);
 
+            container.setCustomLogConsumer(new JBossLogConsumer(Logger.getLogger("managed.keycloak." + i)));
             container.run(configBuilder.toArgs());
         }
     }
@@ -99,11 +100,12 @@ public class ClusteredKeycloakServer implements KeycloakServer {
                 defaultImage() :
                 new RemoteDockerImage(DockerImageName.parse(image));
         for (int i = 0; i < containers.length; ++i) {
-            var container = new DockerKeycloakDistribution(debug, MANUAL_STOP, REQUEST_PORT, exposedPorts, imageFuture);
+            var container = new DockerKeycloakDistribution(false, MANUAL_STOP, REQUEST_PORT, exposedPorts, imageFuture);
             containers[i] = container;
 
             copyProvidersAndConfigs(container, configBuilder);
 
+            container.setCustomLogConsumer(new JBossLogConsumer(Logger.getLogger("managed.keycloak." + i)));
             container.run(configBuilder.toArgs());
         }
     }
