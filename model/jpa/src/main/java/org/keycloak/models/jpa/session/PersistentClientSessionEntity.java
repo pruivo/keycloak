@@ -29,6 +29,8 @@ import jakarta.persistence.NamedQuery;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import org.keycloak.storage.StorageId;
+
 import org.hibernate.annotations.DynamicUpdate;
 
 /**
@@ -145,6 +147,31 @@ public class PersistentClientSessionEntity {
 
     public void setData(String data) {
         this.data = data;
+    }
+
+    public String computeClientId() {
+        var ext = getExternalClientId();
+        if (LOCAL.equals(ext)) {
+            return getClientId();
+        }
+        return new StorageId(getClientStorageProvider(), ext).getId();
+    }
+
+    public static Key keyFrom(String userSessionId, String unknownClientId, String offline) {
+        String clientId;
+        String clientStorageProvider;
+        String externalClientId;
+        var clientStorageId = new StorageId(unknownClientId);
+        if (clientStorageId.isLocal()) {
+            clientId = clientStorageId.getId();
+            clientStorageProvider = PersistentClientSessionEntity.LOCAL;
+            externalClientId = PersistentClientSessionEntity.LOCAL;
+        } else {
+            clientId = PersistentClientSessionEntity.EXTERNAL;
+            clientStorageProvider = clientStorageId.getProviderId();
+            externalClientId = clientStorageId.getExternalId();
+        }
+        return new Key(userSessionId, clientId, clientStorageProvider, externalClientId, offline);
     }
 
     public static class Key implements Serializable {

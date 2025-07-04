@@ -266,7 +266,7 @@ public class PersistentAuthenticatedClientSessionAdapter implements Authenticate
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    protected static class PersistentClientSessionData {
+    public static class PersistentClientSessionData {
 
         @JsonProperty("authMethod")
         private String authMethod;

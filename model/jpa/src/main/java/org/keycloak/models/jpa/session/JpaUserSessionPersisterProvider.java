@@ -102,32 +102,21 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
         PersistentClientSessionModel model = adapter.getUpdatedModel();
 
         String userSessionId = clientSession.getUserSession().getId();
-        String clientId;
-        String clientStorageProvider;
-        String externalClientId;
-        StorageId clientStorageId = new StorageId(clientSession.getClient().getId());
-        if (clientStorageId.isLocal()) {
-            clientId = clientStorageId.getId();
-            clientStorageProvider = PersistentClientSessionEntity.LOCAL;
-            externalClientId = PersistentClientSessionEntity.LOCAL;
-        } else {
-            clientId = PersistentClientSessionEntity.EXTERNAL;
-            clientStorageProvider = clientStorageId.getProviderId();
-            externalClientId = clientStorageId.getExternalId();
-        }
         String offlineStr = offlineToString(offline);
+        var key = PersistentClientSessionEntity.keyFrom(userSessionId, clientSession.getClient().getId(), offlineStr);
         boolean exists = false;
 
-        PersistentClientSessionEntity entity = em.find(PersistentClientSessionEntity.class, new PersistentClientSessionEntity.Key(userSessionId, clientId, clientStorageProvider, externalClientId, offlineStr));
+
+        PersistentClientSessionEntity entity = em.find(PersistentClientSessionEntity.class, key);
         if (entity != null) {
             // client session can already exist in some circumstances (EG. in case it was already present, but expired in the infinispan, but not yet expired in the DB)
             exists = true;
         } else {
             entity = new PersistentClientSessionEntity();
             entity.setUserSessionId(userSessionId);
-            entity.setClientId(clientId);
-            entity.setClientStorageProvider(clientStorageProvider);
-            entity.setExternalClientId(externalClientId);
+            entity.setClientId(key.getClientId());
+            entity.setClientStorageProvider(key.getClientStorageProvider());
+            entity.setExternalClientId(key.getExternalClientId());
             entity.setOffline(offlineStr);
         }
 
@@ -154,18 +143,8 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
     @Override
     public void removeClientSession(String userSessionId, String clientUUID, boolean offline) {
         String offlineStr = offlineToString(offline);
-        StorageId clientStorageId = new StorageId(clientUUID);
-        String clientId = PersistentClientSessionEntity.EXTERNAL;
-        String clientStorageProvider = PersistentClientSessionEntity.LOCAL;
-        String externalId = PersistentClientSessionEntity.LOCAL;
-        if (clientStorageId.isLocal()) {
-            clientId = clientUUID;
-        } else {
-            clientStorageProvider = clientStorageId.getProviderId();
-            externalId = clientStorageId.getExternalId();
-
-        }
-        PersistentClientSessionEntity sessionEntity = em.find(PersistentClientSessionEntity.class, new PersistentClientSessionEntity.Key(userSessionId, clientId, clientStorageProvider, externalId, offlineStr), LockModeType.PESSIMISTIC_WRITE);
+        var key = PersistentClientSessionEntity.keyFrom(userSessionId, clientUUID, offlineStr);
+        PersistentClientSessionEntity sessionEntity = em.find(PersistentClientSessionEntity.class, key, LockModeType.PESSIMISTIC_WRITE);
         if (sessionEntity != null) {
             em.remove(sessionEntity);
 
@@ -266,7 +245,7 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
         }
     }
 
-    private static int calculateOldestSessionTime(RealmModel realm, boolean offline) {
+    public static int calculateOldestSessionTime(RealmModel realm, boolean offline) {
         return Time.currentTime() - (int) TimeUnit.MILLISECONDS.toSeconds(SessionExpirationUtils.calculateUserSessionIdleTimestamp(offline, realm.isRememberMe(), 0, realm));
     }
 

@@ -415,7 +415,7 @@ public class PersistentUserSessionAdapter implements OfflineUserSessionModel {
         return model.isRememberMe() != getData().isRememberMe();
     }
 
-    protected static class PersistentUserSessionData {
+    public static class PersistentUserSessionData {
 
         @JsonProperty("brokerSessionId")
         private String brokerSessionId;
