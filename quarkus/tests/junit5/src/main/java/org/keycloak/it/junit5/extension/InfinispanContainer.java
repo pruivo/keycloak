@@ -79,7 +79,6 @@ public class InfinispanContainer extends org.infinispan.server.test.core.Infinis
     public void start() {
         try {
             logger().info("Starting ISPN container");
-            logger().info("trace - start", new Throwable());
 
             super.start();
 
@@ -90,9 +89,9 @@ public class InfinispanContainer extends org.infinispan.server.test.core.Infinis
                         LOG.infof("Creating cache '%s'", cacheName);
                         createCache(remoteCacheManager, cacheName);
                     });
-            logger().info("trace - end", new Throwable());
         } catch (RuntimeException re) {
             logger().error("exception", re);
+            logger().error("Container logs:%n{}", getLogs());
             throw re;
         }
     }
