@@ -78,6 +78,7 @@ public class InfinispanContainer extends org.infinispan.server.test.core.Infinis
     @Override
     public void start() {
         logger().info("Starting ISPN container");
+        logger().info("trace - start", new Throwable());
 
         super.start();
 
@@ -88,6 +89,7 @@ public class InfinispanContainer extends org.infinispan.server.test.core.Infinis
                     LOG.infof("Creating cache '%s'", cacheName);
                     createCache(remoteCacheManager, cacheName);
                 });
+        logger().info("trace - end", new Throwable());
     }
 
     @Override
