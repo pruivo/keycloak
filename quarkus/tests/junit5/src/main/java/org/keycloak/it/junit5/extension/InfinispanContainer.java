@@ -77,19 +77,24 @@ public class InfinispanContainer extends org.infinispan.server.test.core.Infinis
 
     @Override
     public void start() {
-        logger().info("Starting ISPN container");
-        logger().info("trace - start", new Throwable());
+        try {
+            logger().info("Starting ISPN container");
+            logger().info("trace - start", new Throwable());
 
-        super.start();
+            super.start();
 
-        establishHotRodConnection();
+            establishHotRodConnection();
 
-        Arrays.stream(InfinispanConnectionProvider.CLUSTERED_CACHE_NAMES)
-                .forEach(cacheName -> {
-                    LOG.infof("Creating cache '%s'", cacheName);
-                    createCache(remoteCacheManager, cacheName);
-                });
-        logger().info("trace - end", new Throwable());
+            Arrays.stream(InfinispanConnectionProvider.CLUSTERED_CACHE_NAMES)
+                    .forEach(cacheName -> {
+                        LOG.infof("Creating cache '%s'", cacheName);
+                        createCache(remoteCacheManager, cacheName);
+                    });
+            logger().info("trace - end", new Throwable());
+        } catch (RuntimeException re) {
+            logger().error("exception", re);
+            throw re;
+        }
     }
 
     @Override
