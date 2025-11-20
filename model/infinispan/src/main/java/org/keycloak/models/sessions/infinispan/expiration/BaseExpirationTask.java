@@ -17,34 +17,30 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
+import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
-import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
-import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.session.UserSessionPersisterProvider;
+import org.keycloak.models.utils.KeycloakModelUtils;
 
 import org.infinispan.util.concurrent.BlockingManager;
 
 abstract class BaseExpirationTask implements ExpirationTask {
 
+    private final AtomicReference<BlockingManager.ScheduledBlockingCompletableStage<Void>> future = new AtomicReference<>();
+    private final KeycloakSessionFactory factory;
     private final int intervalSeconds;
     private final BlockingManager blockingManager;
-    private final AtomicReference<BlockingManager.ScheduledBlockingCompletableStage<Void>> future;
-    private final Runnable safePurgeExpired;
 
-    BaseExpirationTask(KeycloakSession session, int intervalSeconds) {
-        this.future = new AtomicReference<>();
+    BaseExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds) {
+        this.factory = Objects.requireNonNull(factory);
         this.intervalSeconds = intervalSeconds;
-        var provider = session.getProvider(InfinispanConnectionProvider.class);
-        this.blockingManager = provider.getBlockingManager();
-        this.safePurgeExpired = () -> {
-            try {
-                purgeExpired();
-            } catch (RuntimeException e) {
-                //log
-            }
-        };
+        this.blockingManager = Objects.requireNonNull(blockingManager);
     }
 
     @Override
@@ -64,11 +60,28 @@ abstract class BaseExpirationTask implements ExpirationTask {
         existing.cancel(true);
     }
 
-    abstract void purgeExpired();
+    void purgeExpired() {
+        try {
+            KeycloakModelUtils.runJobInTransaction(factory, session -> {
+                var provider = session.getProvider(UserSessionPersisterProvider.class);
+                if (provider == null) {
+                    return;
+                }
 
-    int expiration() {
+                session.realms().getRealmsStream()
+                        .filter(realmFilter())
+                        .forEach(provider::removeExpired);
+            });
+        } catch (RuntimeException e) {
+            // TODO log
+        }
+    }
+
+    final int expiration() {
         return intervalSeconds;
     }
+
+    abstract Predicate<RealmModel> realmFilter();
 
     private void schedule() {
         var existing = future.get();
@@ -81,7 +94,7 @@ abstract class BaseExpirationTask implements ExpirationTask {
     }
 
     private BlockingManager.ScheduledBlockingCompletableStage<Void> createSchedule() {
-        return blockingManager.scheduleRunBlocking(safePurgeExpired, intervalSeconds, TimeUnit.SECONDS, "session-purge-expired");
+        return blockingManager.scheduleRunBlocking(this::purgeExpired, intervalSeconds, TimeUnit.SECONDS, "session-purge-expired");
     }
 
     private void queueNextSchedule(CompletionStage<Void> future) {

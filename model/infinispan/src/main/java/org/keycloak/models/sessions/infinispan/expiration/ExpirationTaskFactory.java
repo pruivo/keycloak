@@ -17,16 +17,47 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
+import org.infinispan.client.hotrod.RemoteCache;
+
+import org.keycloak.Config;
+import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.KeycloakSession;
 
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
+
 public final class ExpirationTaskFactory {
 
-    public static ExpirationTask create(KeycloakSession session, int intervalSeconds) {
+    // 3 min
+    private static final int DEFAULT_INTERVAL_SECONDS = 180;
+
+
+    public static ExpirationTask create(KeycloakSession session) {
+        return create(session, getUserSessionExpirationInterval());
+    }
+
+    public static ExpirationTask create(KeycloakSession session, int expirationIntervalSeconds) {
+        var connectionProvider = session.getProvider(InfinispanConnectionProvider.class);
+        var blockingManager = connectionProvider.getBlockingManager();
+
         if (InfinispanUtils.isEmbeddedInfinispan()) {
-            return new ClusterAwareExpirationTask(session, intervalSeconds);
+            var workCache = connectionProvider.getCache(WORK_CACHE_NAME);
+            if (workCache.getCacheConfiguration().clustering().cacheMode().isClustered()) {
+                var distributionManager = workCache.getAdvancedCache().getDistributionManager();
+                return new DistributionAwareExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, distributionManager);
+            }
+
+            return new LocalExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds);
         }
-        return new RemoteExpirationTask(session, intervalSeconds);
+
+        RemoteCache<String, String> workCache = connectionProvider.getRemoteCache(WORK_CACHE_NAME);
+        String nodeName = connectionProvider.getNodeInfo().nodeName();
+        return new RemoteExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, workCache, nodeName);
+    }
+
+    public static int getUserSessionExpirationInterval() {
+        // TODO where to put this!? "scheduled" is not document anywhere, but it is where the cluster tasks interval is configured.
+        return Config.scope("scheduled").getInt("session-expiration-interval", DEFAULT_INTERVAL_SECONDS);
     }
 
 }

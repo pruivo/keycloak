@@ -18,18 +18,15 @@
 package org.keycloak.models.sessions.infinispan.expiration;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
-import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.session.UserSessionPersisterProvider;
-import org.keycloak.models.utils.KeycloakModelUtils;
 
 import org.infinispan.client.hotrod.RemoteCache;
 import org.infinispan.client.hotrod.annotation.ClientListener;
@@ -41,59 +38,54 @@ import org.infinispan.notifications.cachelistener.annotation.CacheEntryCreated;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryExpired;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryModified;
 import org.infinispan.notifications.cachelistener.annotation.CacheEntryRemoved;
-
-import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
+import org.infinispan.util.concurrent.BlockingManager;
 
 @ClientListener(includeCurrentState = true)
 class RemoteExpirationTask extends BaseExpirationTask {
 
     private static final String MEMBER_KEY_PREFIX = "node:";
-    private final KeycloakSessionFactory factory;
+    private static final int LIFESPAN_INCREASE_SECONDS = 30;
+
     private final RemoteCache<String, String> workCache;
     private final String nodeUUID = MEMBER_KEY_PREFIX + UUID.randomUUID();
     private final String nodeName;
     private final Set<String> membership = ConcurrentHashMap.newKeySet();
 
-    RemoteExpirationTask(KeycloakSession session, int intervalSeconds) {
-        super(session, intervalSeconds);
-        this.factory = session.getKeycloakSessionFactory();
-        this.workCache = session.getProvider(InfinispanConnectionProvider.class).getRemoteCache(WORK_CACHE_NAME);
-        this.nodeName = session.getProvider(InfinispanConnectionProvider.class).getNodeInfo().nodeName();
+    RemoteExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, RemoteCache<String, String> workCache, String nodeName) {
+        super(factory, blockingManager, intervalSeconds);
+        this.workCache = Objects.requireNonNull(workCache);
+        this.nodeName = Objects.requireNonNull(nodeName);
     }
 
     @Override
-    public void start() {
+    public final void start() {
         workCache.addClientListener(this);
         sendHeartBeat();
         super.start();
     }
 
     @Override
-    public void stop() {
-        workCache.removeClientListener(this);
+    public final void stop() {
         super.stop();
+        // do not block the shutdown, if it is received, good, if not, it will expire.
         workCache.removeAsync(nodeUUID);
+        workCache.removeClientListener(this);
     }
 
     @Override
-    void purgeExpired() {
+    final void purgeExpired() {
         sendHeartBeat();
         try {
-            KeycloakModelUtils.runJobInTransaction(factory, session -> {
-                var provider = session.getProvider(UserSessionPersisterProvider.class);
-                if (provider == null) {
-                    return;
-                }
-                HashingPredicate predicate = new HashingPredicate(membership.stream().sorted().toList(), nodeUUID);
-                session.realms().getRealmsStream()
-                        .filter(predicate)
-                        .forEach(provider::removeExpired);
-            });
+            super.purgeExpired();
         } finally {
             sendHeartBeat();
         }
     }
 
+    @Override
+    final Predicate<RealmModel> realmFilter() {
+        return new HashingPredicate(membership.stream().sorted().toList(), nodeUUID);
+    }
 
     @CacheEntryCreated
     public void onKeycloakConnected(ClientCacheEntryCreatedEvent<String> event) {
@@ -128,14 +120,15 @@ class RemoteExpirationTask extends BaseExpirationTask {
     }
 
     private void sendHeartBeat() {
-        workCache.putAsync(nodeUUID, nodeName, expiration() + 30, TimeUnit.SECONDS);
+        // we don't care about it, we sent it frequently.
+        workCache.putAsync(nodeUUID, nodeName, expiration() + LIFESPAN_INCREASE_SECONDS, TimeUnit.SECONDS);
     }
 
     private record HashingPredicate(List<String> members, String myUUID) implements Predicate<RealmModel> {
 
         @Override
-        public boolean test(RealmModel realmModel) {
-            var index = MurmurHash3.getInstance().hash(realmModel.getId()) & members.size();
+        public boolean test(RealmModel realm) {
+            var index = MurmurHash3.getInstance().hash(realm.getId()) & members.size();
             return myUUID.equals(members.get(index));
         }
     }

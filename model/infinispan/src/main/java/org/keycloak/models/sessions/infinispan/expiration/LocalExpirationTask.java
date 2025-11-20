@@ -17,18 +17,27 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
-import org.keycloak.Config;
+import java.util.function.Predicate;
 
-public final class UserSessionExpirationInterval {
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.RealmModel;
 
-    // 3 min
-    private static final int DEFAULT_INTERVAL_SECONDS = 180;
+import org.infinispan.distribution.DistributionManager;
+import org.infinispan.util.concurrent.BlockingManager;
 
-    private UserSessionExpirationInterval() {}
+class LocalExpirationTask extends BaseExpirationTask implements Predicate<RealmModel> {
 
-    public static int getUserSessionExpirationInterval() {
-        // TODO where to put this!? "scheduled" is not document anywhere, but it is where the cluster tasks interval is configured.
-        return Config.scope("scheduled").getInt("session-expiration-interval", DEFAULT_INTERVAL_SECONDS);
+    LocalExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds) {
+        super(factory, blockingManager, intervalSeconds);
     }
 
+    @Override
+    final Predicate<RealmModel> realmFilter() {
+        return this;
+    }
+
+    @Override
+    public final boolean test(RealmModel realmModel) {
+        return true;
+    }
 }

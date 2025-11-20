@@ -30,7 +30,6 @@ import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
 import org.keycloak.models.sessions.infinispan.entities.RemoteAuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.RemoteUserSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.RootAuthenticationSessionEntity;
-import org.keycloak.models.sessions.infinispan.expiration.UserSessionExpirationInterval;
 
 import org.infinispan.commons.dataconversion.MediaType;
 import org.infinispan.configuration.cache.AbstractStoreConfiguration;
@@ -46,6 +45,8 @@ import org.infinispan.transaction.LockingMode;
 import org.infinispan.transaction.TransactionMode;
 import org.infinispan.transaction.lookup.EmbeddedTransactionManagerLookup;
 import org.jboss.logging.Logger;
+
+import org.keycloak.models.sessions.infinispan.expiration.ExpirationTaskFactory;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.ACTION_TOKEN_CACHE;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.ALL_CACHES_NAME;
@@ -392,7 +393,7 @@ public final class CacheConfigurator {
     // private methods below
 
     private static void configureSessionExpirationReaper(ConfigurationBuilder builder) {
-        builder.expiration().enableReaper().wakeUpInterval(UserSessionExpirationInterval.getUserSessionExpirationInterval(), TimeUnit.SECONDS);
+        builder.expiration().enableReaper().wakeUpInterval(ExpirationTaskFactory.getUserSessionExpirationInterval(), TimeUnit.SECONDS);
     }
 
     private static ConfigurationBuilder remoteCacheConfigurationBuilder(String name, Config.Scope config, String[] sites, Class<?> indexedEntity) {

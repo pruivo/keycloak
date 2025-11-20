@@ -54,7 +54,6 @@ import org.keycloak.models.sessions.infinispan.events.RealmRemovedSessionEvent;
 import org.keycloak.models.sessions.infinispan.events.RemoveUserSessionsEvent;
 import org.keycloak.models.sessions.infinispan.expiration.ExpirationTask;
 import org.keycloak.models.sessions.infinispan.expiration.ExpirationTaskFactory;
-import org.keycloak.models.sessions.infinispan.expiration.UserSessionExpirationInterval;
 import org.keycloak.models.sessions.infinispan.listeners.EmbeddedUserSessionExpirationListener;
 import org.keycloak.models.sessions.infinispan.transaction.InfinispanTransactionProvider;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
@@ -219,7 +218,7 @@ public class InfinispanUserSessionProviderFactory implements UserSessionProvider
         }
         if (MultiSiteUtils.isPersistentSessionsEnabled()) {
             try (var session = factory.create()) {
-                expirationTask = ExpirationTaskFactory.create(session, UserSessionExpirationInterval.getUserSessionExpirationInterval());
+                expirationTask = ExpirationTaskFactory.create(session);
             }
             expirationTask.start();
         }
