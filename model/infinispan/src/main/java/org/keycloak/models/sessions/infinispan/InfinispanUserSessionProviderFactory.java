@@ -52,6 +52,9 @@ import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.models.sessions.infinispan.events.AbstractUserSessionClusterListener;
 import org.keycloak.models.sessions.infinispan.events.RealmRemovedSessionEvent;
 import org.keycloak.models.sessions.infinispan.events.RemoveUserSessionsEvent;
+import org.keycloak.models.sessions.infinispan.expiration.ExpirationTask;
+import org.keycloak.models.sessions.infinispan.expiration.ExpirationTaskFactory;
+import org.keycloak.models.sessions.infinispan.expiration.UserSessionExpirationInterval;
 import org.keycloak.models.sessions.infinispan.listeners.EmbeddedUserSessionExpirationListener;
 import org.keycloak.models.sessions.infinispan.transaction.InfinispanTransactionProvider;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
@@ -92,6 +95,7 @@ public class InfinispanUserSessionProviderFactory implements UserSessionProvider
     private CacheHolder<EmbeddedClientSessionKey, AuthenticatedClientSessionEntity> clientSessionCacheHolder;
     private CacheHolder<EmbeddedClientSessionKey, AuthenticatedClientSessionEntity> offlineClientSessionCacheHolder;
     private EmbeddedUserSessionExpirationListener expirationListener;
+    private ExpirationTask expirationTask;
 
     private long offlineSessionCacheEntryLifespanOverride;
 
@@ -213,6 +217,12 @@ public class InfinispanUserSessionProviderFactory implements UserSessionProvider
             // The expired events for offline sessions will be triggered by JpaUserSessionPersisterProvider
             sessionCacheHolder.cache().addListener(expirationListener);
         }
+        if (MultiSiteUtils.isPersistentSessionsEnabled()) {
+            try (var session = factory.create()) {
+                expirationTask = ExpirationTaskFactory.create(session, UserSessionExpirationInterval.getUserSessionExpirationInterval());
+            }
+            expirationTask.start();
+        }
     }
 
     public void initializePersisterLastSessionRefreshStore(final KeycloakSessionFactory sessionFactory) {
@@ -302,6 +312,10 @@ public class InfinispanUserSessionProviderFactory implements UserSessionProvider
         if (expirationListener != null) {
             sessionCacheHolder.cache().removeListener(expirationListener);
             expirationListener = null;
+        }
+        if (expirationTask != null) {
+            expirationTask.stop();
+            expirationTask = null;
         }
     }
 
