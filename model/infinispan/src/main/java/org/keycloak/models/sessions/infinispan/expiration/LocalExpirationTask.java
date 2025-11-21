@@ -22,7 +22,6 @@ import java.util.function.Predicate;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 
-import org.infinispan.distribution.DistributionManager;
 import org.infinispan.util.concurrent.BlockingManager;
 
 class LocalExpirationTask extends BaseExpirationTask implements Predicate<RealmModel> {

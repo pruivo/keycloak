@@ -17,12 +17,12 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
-import org.infinispan.client.hotrod.RemoteCache;
-
 import org.keycloak.Config;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.KeycloakSession;
+
+import org.infinispan.client.hotrod.RemoteCache;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
 
