@@ -18,6 +18,7 @@
 package org.keycloak.models.sessions.infinispan.expiration;
 
 import java.util.Objects;
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 
 import org.keycloak.models.KeycloakSessionFactory;
@@ -30,8 +31,8 @@ class DistributionAwareExpirationTask extends BaseExpirationTask implements Pred
 
     private final DistributionManager distributionManager;
 
-    DistributionAwareExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, DistributionManager distributionManager) {
-        super(factory, blockingManager, intervalSeconds);
+    DistributionAwareExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, LongConsumer onTaskExecuted, DistributionManager distributionManager) {
+        super(factory, blockingManager, intervalSeconds, onTaskExecuted);
         this.distributionManager = Objects.requireNonNull(distributionManager);
     }
 

@@ -17,11 +17,22 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongConsumer;
+
 import org.keycloak.Config;
+import org.keycloak.config.MetricsOptions;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionProvider;
+import org.keycloak.models.sessions.infinispan.InfinispanUserSessionProviderFactory;
+import org.keycloak.provider.ProviderFactory;
 
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.Timer;
 import org.infinispan.client.hotrod.RemoteCache;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.WORK_CACHE_NAME;
@@ -31,12 +42,19 @@ public final class ExpirationTaskFactory {
     // 3 min
     private static final int DEFAULT_INTERVAL_SECONDS = 180;
 
-
     public static ExpirationTask create(KeycloakSession session) {
-        return create(session, getUserSessionExpirationInterval());
+        LongConsumer onTaskExecuted = null;
+        if (Config.scope().root().getBoolean(MetricsOptions.METRICS_ENABLED.getKey(), Boolean.FALSE)) {
+            var timer = Timer.builder("keycloak.userSession.expiration")
+                    .description("Keycloak User Sessions expiration tasks")
+                    .publishPercentileHistogram()
+                    .register(Metrics.globalRegistry);
+            onTaskExecuted = value -> timer.record(value, TimeUnit.NANOSECONDS);
+        }
+        return create(session, getUserSessionExpirationInterval(), onTaskExecuted);
     }
 
-    public static ExpirationTask create(KeycloakSession session, int expirationIntervalSeconds) {
+    public static ExpirationTask create(KeycloakSession session, int expirationIntervalSeconds, LongConsumer onTaskExecuted) {
         var connectionProvider = session.getProvider(InfinispanConnectionProvider.class);
         var blockingManager = connectionProvider.getBlockingManager();
 
@@ -44,20 +62,43 @@ public final class ExpirationTaskFactory {
             var workCache = connectionProvider.getCache(WORK_CACHE_NAME);
             if (workCache.getCacheConfiguration().clustering().cacheMode().isClustered()) {
                 var distributionManager = workCache.getAdvancedCache().getDistributionManager();
-                return new DistributionAwareExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, distributionManager);
+                return new DistributionAwareExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, onTaskExecuted, distributionManager);
             }
 
-            return new LocalExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds);
+            return new LocalExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, onTaskExecuted);
         }
 
         RemoteCache<String, String> workCache = connectionProvider.getRemoteCache(WORK_CACHE_NAME);
         String nodeName = connectionProvider.getNodeInfo().nodeName();
-        return new RemoteExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, workCache, nodeName);
+        return new RemoteExpirationTask(session.getKeycloakSessionFactory(), blockingManager, expirationIntervalSeconds, onTaskExecuted, workCache, nodeName);
     }
 
     public static int getUserSessionExpirationInterval() {
         // TODO where to put this!? "scheduled" is not document anywhere, but it is where the cluster tasks interval is configured.
         return Config.scope("scheduled").getInt("session-expiration-interval", DEFAULT_INTERVAL_SECONDS);
+    }
+
+    public static boolean isSelectedForExpireSessionsInRealm(KeycloakSession session, RealmModel realm) {
+        return getEventTask(session)
+                .map(BaseExpirationTask::realmFilter)
+                .map(filter -> filter.test(realm))
+                .orElse(false);
+    }
+
+    public static void manualTriggerTask(KeycloakSession session) {
+        getEventTask(session).ifPresent(BaseExpirationTask::purgeExpired);
+    }
+
+    private static Optional<BaseExpirationTask> getEventTask(KeycloakSession session) {
+        ProviderFactory<UserSessionProvider> provider = session.getKeycloakSessionFactory().getProviderFactory(UserSessionProvider.class);
+        if (!(provider instanceof InfinispanUserSessionProviderFactory iuspf)) {
+            return Optional.empty();
+        }
+        ExpirationTask task = iuspf.getExpirationTask();
+        if (!(task instanceof BaseExpirationTask bet)) {
+            return Optional.empty();
+        }
+        return Optional.of(bet);
     }
 
 }

@@ -17,6 +17,7 @@
 
 package org.keycloak.models.sessions.infinispan.expiration;
 
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 
 import org.keycloak.models.KeycloakSessionFactory;
@@ -26,8 +27,8 @@ import org.infinispan.util.concurrent.BlockingManager;
 
 class LocalExpirationTask extends BaseExpirationTask implements Predicate<RealmModel> {
 
-    LocalExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds) {
-        super(factory, blockingManager, intervalSeconds);
+    LocalExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, LongConsumer onTaskExecuted) {
+        super(factory, blockingManager, intervalSeconds, onTaskExecuted);
     }
 
     @Override

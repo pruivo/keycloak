@@ -388,6 +388,10 @@ public class InfinispanUserSessionProviderFactory implements UserSessionProvider
         return Set.of(InfinispanConnectionProvider.class, InfinispanTransactionProvider.class);
     }
 
+    public ExpirationTask getExpirationTask() {
+        return expirationTask;
+    }
+
     private VolatileTransactions createVolatileTransaction(KeycloakSession session) {
         var sessionTx = new InfinispanChangelogBasedTransaction<>(session, sessionCacheHolder);
         var offlineSessionTx = new InfinispanChangelogBasedTransaction<>(session, offlineSessionCacheHolder);

@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 
 import org.keycloak.models.KeycloakSessionFactory;
@@ -36,11 +37,13 @@ abstract class BaseExpirationTask implements ExpirationTask {
     private final KeycloakSessionFactory factory;
     private final int intervalSeconds;
     private final BlockingManager blockingManager;
+    private final LongConsumer onTaskExecuted;
 
-    BaseExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds) {
+    BaseExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, LongConsumer onTaskExecuted) {
         this.factory = Objects.requireNonNull(factory);
         this.intervalSeconds = intervalSeconds;
         this.blockingManager = Objects.requireNonNull(blockingManager);
+        this.onTaskExecuted = Objects.requireNonNullElse(onTaskExecuted, value -> {});
     }
 
     @Override
@@ -61,6 +64,7 @@ abstract class BaseExpirationTask implements ExpirationTask {
     }
 
     void purgeExpired() {
+        long start = System.nanoTime();
         try {
             KeycloakModelUtils.runJobInTransaction(factory, session -> {
                 var provider = session.getProvider(UserSessionPersisterProvider.class);
@@ -74,6 +78,8 @@ abstract class BaseExpirationTask implements ExpirationTask {
             });
         } catch (RuntimeException e) {
             // TODO log
+        } finally {
+            onTaskExecuted.accept(System.nanoTime() - start);
         }
     }
 

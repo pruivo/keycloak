@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongConsumer;
 import java.util.function.Predicate;
 
 import org.keycloak.models.KeycloakSessionFactory;
@@ -51,8 +52,8 @@ class RemoteExpirationTask extends BaseExpirationTask {
     private final String nodeName;
     private final Set<String> membership = ConcurrentHashMap.newKeySet();
 
-    RemoteExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, RemoteCache<String, String> workCache, String nodeName) {
-        super(factory, blockingManager, intervalSeconds);
+    RemoteExpirationTask(KeycloakSessionFactory factory, BlockingManager blockingManager, int intervalSeconds, LongConsumer onTaskExecuted, RemoteCache<String, String> workCache, String nodeName) {
+        super(factory, blockingManager, intervalSeconds, onTaskExecuted);
         this.workCache = Objects.requireNonNull(workCache);
         this.nodeName = Objects.requireNonNull(nodeName);
     }
