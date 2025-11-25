@@ -18,10 +18,29 @@
 
 <infinispan
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="urn:infinispan:config:15.0 http://www.infinispan.org/schemas/infinispan-config-15.0.xsd"
+        xsi:schemaLocation="urn:infinispan:config:15.0 http://www.infinispan.org/schemas/infinispan-config-15.0.xsd
+                            urn:infinispan:config:store:jdbc:15.0 https://infinispan.org/schemas/infinispan-cachestore-jdbc-config-15.0.xsd"
         xmlns="urn:infinispan:config:15.0">
 
     <cache-container name="keycloak">
         <transport lock-timeout="60000"/>
+
+        <distributed-cache name="loginFailures" owners="1">
+            <persistence>
+                <string-keyed-jdbc-store xmlns="urn:infinispan:config:store:jdbc:15.0"
+                                         dialect="POSTGRES"
+                                         key-to-string-mapper="org.keycloak.infinispan.jdbc.LoginFailureTwoWayKey2StringMapper"
+                                         shared="true">
+                    <cdi-data-source/> <!-- TODO, only works in Quarkus env, create our own datasource -->
+                    <string-keyed-table prefix="ispn_"
+                                        create-on-start="true">
+                        <id-column name="ID_COLUMN" type="VARCHAR(320)"/>
+                        <data-column name="DATA" type="BYTEA"/>
+                        <segment-column name="SEGMENT" type="INT"/>
+                        <timestamp-column name="TIMESTAMP" type="BIGINT"/>
+                    </string-keyed-table>
+                </string-keyed-jdbc-store>
+            </persistence>
+        </distributed-cache>
     </cache-container>
 </infinispan>
