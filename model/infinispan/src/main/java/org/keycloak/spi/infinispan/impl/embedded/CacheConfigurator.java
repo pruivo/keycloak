@@ -25,6 +25,7 @@ import java.util.stream.Stream;
 
 import org.keycloak.Config;
 import org.keycloak.config.CachingOptions;
+import org.keycloak.infinispan.module.configuration.cache.LoginFailuresStoreConfigurationBuilder;
 import org.keycloak.marshalling.Marshalling;
 import org.keycloak.models.sessions.infinispan.InfinispanUserSessionProviderFactory;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
@@ -521,10 +522,18 @@ public final class CacheConfigurator {
                 return builder;
             case ACTION_TOKEN_CACHE:
             case AUTHENTICATION_SESSIONS_CACHE_NAME:
+                if (clustered) {
+                    builder.clustering().cacheMode(CacheMode.DIST_SYNC);
+                }
+                builder.encoding().mediaType(MediaType.APPLICATION_OBJECT_TYPE);
+                return builder;
             case LOGIN_FAILURE_CACHE_NAME:
                 if (clustered) {
                     builder.clustering().cacheMode(CacheMode.DIST_SYNC);
                 }
+                builder.persistence().addStore(LoginFailuresStoreConfigurationBuilder.class)
+                        .shared(true)
+                        .segmented(true);
                 builder.encoding().mediaType(MediaType.APPLICATION_OBJECT_TYPE);
                 return builder;
             // Local Caches

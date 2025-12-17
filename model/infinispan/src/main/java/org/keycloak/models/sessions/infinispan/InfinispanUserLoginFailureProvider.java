@@ -19,6 +19,7 @@ package org.keycloak.models.sessions.infinispan;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
+import org.keycloak.infinispan.module.persistence.LoginFailuresStore;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserLoginFailureModel;
@@ -39,6 +40,7 @@ import org.keycloak.models.sessions.infinispan.stream.SessionWrapperPredicate;
 import org.keycloak.models.sessions.infinispan.util.FuturesHelper;
 
 import org.infinispan.Cache;
+import org.infinispan.context.Flag;
 import org.jboss.logging.Logger;
 
 import static org.keycloak.common.util.StackUtil.getShortStackTrace;
@@ -52,8 +54,6 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
     private static final Logger log = Logger.getLogger(InfinispanUserLoginFailureProvider.class);
 
     protected final KeycloakSession session;
-
-
     protected final InfinispanChangelogBasedTransaction<LoginFailureKey, LoginFailureEntity> loginFailuresTx;
     protected final SessionEventsSenderTransaction clusterEventsSenderTx;
 
@@ -64,7 +64,6 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
         this.clusterEventsSenderTx = new SessionEventsSenderTransaction(session);
         session.getTransactionManager().enlistAfterCompletion(clusterEventsSenderTx);
     }
-
 
     @Override
     public UserLoginFailureModel getUserLoginFailure(RealmModel realm, String userId) {
@@ -100,6 +99,9 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
     public void removeAllUserLoginFailures(RealmModel realm) {
         log.tracef("removeAllUserLoginFailures(%s)%s", realm, getShortStackTrace());
 
+        LoginFailuresStore.findStore(loginFailuresTx.getCache())
+                .ifPresent(store -> store.deleteRealm(session, realm));
+
         clusterEventsSenderTx.addEvent(
                 RemoveAllUserLoginFailuresEvent.createEvent(RemoveAllUserLoginFailuresEvent.class, InfinispanUserLoginFailureProviderFactory.REMOVE_ALL_LOGIN_FAILURES_EVENT, session, realm.getId())
         );
@@ -110,7 +112,10 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
 
         FuturesHelper futures = new FuturesHelper();
 
-        Cache<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>> localCache = CacheDecorators.localCache(loginFailuresTx.getCache());
+        var localCache = CacheDecorators.localCache(loginFailuresTx.getCache());
+        if (LoginFailuresStore.findStore(loginFailuresTx.getCache()).isPresent()) {
+            localCache = localCache.withFlags(Flag.SKIP_CACHE_STORE, Flag.SKIP_CACHE_LOAD);
+        }
 
         // Go through local cache data only
         // entries from other nodes will be removed by each instance receiving the event
@@ -119,9 +124,9 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
                 .stream()
                 .filter(SessionWrapperPredicate.create(realmId))
                 .map(Mappers.loginFailureId())
-                .forEach(loginFailureKey -> {
+                .<LoginFailureKey, SessionEntityWrapper<LoginFailureEntity>>forEach((cache, loginFailureKey) -> {
                     // Remove loginFailure from remoteCache too. Use removeAsync for better perf
-                    Future<?> future = removeKeyFromCache(localCache, loginFailureKey);
+                    Future<?> future = removeKeyFromCache(cache, loginFailureKey);
                     futures.addTask(future);
                 });
 
@@ -151,6 +156,15 @@ public class InfinispanUserLoginFailureProvider implements UserLoginFailureProvi
 
     @Override
     public void updateWithLatestRealmSettings(RealmModel realm) {
+        if (LoginFailuresStore.findStore(loginFailuresTx.getCache()).isPresent()) {
+            // when persisted, we only need to remove the cached data
+            // when Infinispan loads it from the database, it applies the current realm settings.
+            loginFailuresTx.getCache()
+                    .getAdvancedCache()
+                    .withFlags(Flag.SKIP_CACHE_STORE, Flag.SKIP_CACHE_LOAD)
+                    .clear();
+            return;
+        }
         var stream = loginFailuresTx.getCache()
                 .entrySet()
                 .stream()
