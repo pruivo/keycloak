@@ -898,6 +898,7 @@ public class UserSessionProviderTest extends AbstractTestRealmKeycloakTest {
 
         KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), kcSession -> {
             RealmModel realm = kcSession.realms().getRealmByName("test");
+            kcSession.getContext().setRealm(realm);
             var readOnlySessionList = kcSession.sessions().readOnlyStreamUserSessions(realm).toList();
             assertSessions(readOnlySessionList, sessions);
 
