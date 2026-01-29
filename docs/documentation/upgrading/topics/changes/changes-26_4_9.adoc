@@ -26,3 +26,13 @@ To analyze rejected requests in the server log, enable debug logging for `org.ke
 
 To revert to the previous behavior and to accept matrix parameters set the option `http-accept-non-normalized-paths` to `true`.
 With this configuration, enable and review the HTTP access log to identify problematic requests.
+
+=== `UserSessionProvider` API changes
+
+The internal `UserSessionProvider` interface received new methods for efficient streaming of user sessions, in both speed and memory.
+The streaming instances are read-only, meaning they will not change.
+The previous methods have been deprecated.
+Custom providers should implement these new methods to avoid performance penalties.
+They should avoid keeping the returned items in memory by for example binding them to the current transaction, in case the invoker needs to analyze all data.
+
+A similar change was done for the `UserSessionPersisterProvider`.

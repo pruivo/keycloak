@@ -36,10 +36,10 @@ public final class UserSessionQueries {
     private static final String BY_BROKER_SESSION_ID = BASE_QUERY + "WHERE e.realmId = :realmId && e.brokerSessionId = :brokerSessionId ORDER BY e.userSessionId";
     private static final String BY_USER_ID = BASE_QUERY + "WHERE e.realmId = :realmId && e.userId = :userId ORDER BY e.userSessionId";
     private static final String BY_BROKER_USER_ID = BASE_QUERY + "WHERE e.realmId = :realmId && e.brokerUserId = :brokerUserId ORDER BY e.userSessionId";
+    private static final String BY_REALM = BASE_QUERY + "WHERE e.realmId = :realmId ORDER BY e.userSessionId";
 
     /**
-     * Returns a projection with the user session, and the version of all user sessions belonging to the broker session
-     * ID.
+     * Returns all user sessions belonging to the broker session ID.
      */
     public static Query<RemoteUserSessionEntity> searchByBrokerSessionId(RemoteCache<String, RemoteUserSessionEntity> cache, String realmId, String brokerSessionId) {
         return cache.<RemoteUserSessionEntity>query(BY_BROKER_SESSION_ID)
@@ -48,7 +48,7 @@ public final class UserSessionQueries {
     }
 
     /**
-     * Returns a projection with the user session, and the version of all user sessions belonging to the user ID.
+     * Returns all user sessions belonging to the user ID.
      */
     public static Query<RemoteUserSessionEntity> searchByUserId(RemoteCache<String, RemoteUserSessionEntity> cache, String realmId, String userId) {
         return cache.<RemoteUserSessionEntity>query(BY_USER_ID)
@@ -57,12 +57,19 @@ public final class UserSessionQueries {
     }
 
     /**
-     * Returns a projection with the user session, and the version of all user sessions belonging to the broker user
-     * ID.
+     * Returns all user sessions belonging to the broker user ID.
      */
     public static Query<RemoteUserSessionEntity> searchByBrokerUserId(RemoteCache<String, RemoteUserSessionEntity> cache, String realmId, String brokerUserId) {
         return cache.<RemoteUserSessionEntity>query(BY_BROKER_USER_ID)
                 .setParameter("realmId", realmId)
                 .setParameter("brokerUserId", brokerUserId);
+    }
+
+    /**
+     * Returns all the user sessions belonging to the Realm.
+     */
+    public static Query<RemoteUserSessionEntity> searchByRealm(RemoteCache<String, RemoteUserSessionEntity> cache, String realmId) {
+        return cache.<RemoteUserSessionEntity>query(BY_REALM)
+                .setParameter("realmId", realmId);
     }
 }
