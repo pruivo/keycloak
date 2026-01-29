@@ -51,7 +51,12 @@ import org.hibernate.annotations.DynamicUpdate;
         @NamedQuery(name="findClientSessionsCountByClient", query="select count(sess) from PersistentClientSessionEntity sess where sess.offline = :offline and sess.clientId = :clientId and sess.clientId != 'external'"),
         @NamedQuery(name="findClientSessionsCountByExternalClient", query="select count(sess) from PersistentClientSessionEntity sess where sess.offline = :offline and sess.clientStorageProvider = :clientStorageProvider and sess.externalClientId = :externalClientId and sess.clientStorageProvider != 'internal'"),
         @NamedQuery(name="findClientSessionsByUserSessionAndClient", query="select sess from PersistentClientSessionEntity sess where sess.userSessionId=:userSessionId and sess.offline = :offline and sess.clientId=:clientId and sess.clientId != 'external'"),
-        @NamedQuery(name="findClientSessionsByUserSessionAndExternalClient", query="select sess from PersistentClientSessionEntity sess where sess.userSessionId=:userSessionId and sess.offline = :offline and sess.clientStorageProvider = :clientStorageProvider and sess.externalClientId = :externalClientId and sess.clientStorageProvider != 'internal'")
+        @NamedQuery(name="findClientSessionsByUserSessionAndExternalClient", query="select sess from PersistentClientSessionEntity sess where sess.userSessionId=:userSessionId and sess.offline = :offline and sess.clientStorageProvider = :clientStorageProvider and sess.externalClientId = :externalClientId and sess.clientStorageProvider != 'internal'"),
+        @NamedQuery(name = "findClientSessionsOrderedByIdExactReadOnly",
+                query = "SELECT new org.keycloak.models.jpa.session.ImmutablePersistentClientSessionEntity(sess.userSessionId, sess.clientId, sess.clientStorageProvider, sess.externalClientId, sess.offline, sess.data, sess.timestamp)" +
+                        " FROM PersistentClientSessionEntity sess" +
+                        " WHERE sess.offline = :offline AND sess.userSessionId IN (:userSessionIds)"
+        ),
 })
 @Table(name="OFFLINE_CLIENT_SESSION")
 @Entity
