@@ -89,6 +89,7 @@ import org.keycloak.models.sessions.infinispan.stream.Mappers;
 import org.keycloak.models.sessions.infinispan.stream.SessionWrapperPredicate;
 import org.keycloak.models.sessions.infinispan.stream.UserSessionPredicate;
 import org.keycloak.models.sessions.infinispan.util.FuturesHelper;
+import org.keycloak.models.sessions.infinispan.util.SessionExpirationPredicates;
 import org.keycloak.models.sessions.infinispan.util.InfinispanKeyGenerator;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
 import org.keycloak.models.utils.KeycloakModelUtils;
@@ -488,6 +489,38 @@ public class PersistentUserSessionProvider implements UserSessionProvider, Sessi
                 ClusterProvider.DCNotify.ALL_DCS);
 
         session.getProvider(UserSessionPersisterProvider.class).removeUserSessions(realm);
+    }
+
+    @Override
+    public Stream<UserSessionModel> readOnlyStreamUserSessions(RealmModel realm) {
+        return readOnlyStream(realm, false);
+    }
+
+    @Override
+    public Stream<UserSessionModel> readOnlyStreamOfflineUserSessions(RealmModel realm) {
+        return readOnlyStream(realm, true);
+    }
+
+    @Override
+    public Stream<UserSessionModel> readOnlyStreamOfflineUserSessions(RealmModel realm, ClientModel client) {
+        return readOnlyStream(realm, client, true);
+    }
+
+    @Override
+    public Stream<UserSessionModel> readOnlyStreamUserSessions(RealmModel realm, ClientModel client) {
+        return readOnlyStream(realm, client, false);
+    }
+
+    private Stream<UserSessionModel> readOnlyStream(RealmModel realm, boolean offline) {
+        var expiration = new SessionExpirationPredicates(realm, offline, Time.currentTime());
+        return session.getProvider(UserSessionPersisterProvider.class).readOnlyUserSessionStream(realm, offline)
+                .filter(Predicate.not(expiration::isUserSessionExpired));
+    }
+
+    private Stream<UserSessionModel> readOnlyStream(RealmModel realm, ClientModel client, boolean offline) {
+        var expiration = new SessionExpirationPredicates(realm, offline, Time.currentTime());
+        return session.getProvider(UserSessionPersisterProvider.class).readOnlyUserSessionStream(realm, client, offline)
+                .filter(Predicate.not(expiration::isUserSessionExpired));
     }
 
     protected void onRemoveUserSessionsEvent(String realmId) {

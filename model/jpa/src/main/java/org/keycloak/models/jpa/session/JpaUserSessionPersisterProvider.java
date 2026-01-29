@@ -54,6 +54,8 @@ import java.util.stream.Stream;
 import jakarta.persistence.LockModeType;
 import org.keycloak.utils.StreamsUtil;
 
+import org.hibernate.jpa.HibernateHints;
+
 import static org.keycloak.models.jpa.PaginationUtils.paginateQuery;
 import static org.keycloak.utils.StreamsUtil.closing;
 
@@ -457,6 +459,35 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
                 .orElse(null);
     }
 
+    @Override
+    public Stream<UserSessionModel> readOnlyUserSessionStream(RealmModel realm, boolean offline) {
+        var query = em.createNamedQuery("findUserSessionsByRealmAndTypeReadOnly", ImmutablePersistentUserSessionEntity.class)
+                .setHint(HibernateHints.HINT_READ_ONLY, true)
+                .setHint(HibernateHints.HINT_FETCH_SIZE, 512)
+                .setParameter("realmId", realm.getId())
+                .setParameter("offline", offlineToString(offline))
+                .setParameter("lastSessionRefresh", calculateOldestSessionTime(realm, offline));
+        return readOnlyLoadExactUserSessionsWithClientSessions(query, realm, offlineToString(offline));
+    }
+
+
+    @Override
+    public Stream<UserSessionModel> readOnlyUserSessionStream(RealmModel realm, ClientModel client, boolean offline) {
+        var clientStorageId = new StorageId(client.getId());
+        var query = clientStorageId.isLocal() ?
+                em.createNamedQuery("findUserSessionsByClientIdReadOnly", ImmutablePersistentUserSessionEntity.class)
+                        .setParameter("clientId", client.getId()) :
+                em.createNamedQuery("findUserSessionsByExternalClientIdReadOnly", ImmutablePersistentUserSessionEntity.class)
+                        .setParameter("clientStorageProvider", clientStorageId.getProviderId())
+                        .setParameter("externalClientId", clientStorageId.getExternalId());
+        query.setParameter("offline", offlineToString(offline))
+                .setParameter("realmId", realm.getId())
+                .setParameter("lastSessionRefresh", calculateOldestSessionTime(realm, offline))
+                .setHint(HibernateHints.HINT_READ_ONLY, true)
+                .setHint(HibernateHints.HINT_FETCH_SIZE, 512);
+        return readOnlyLoadExactUserSessionsWithClientSessions(query, realm, offlineToString(offline));
+    }
+
     /**
      *
      * @param query
@@ -493,7 +524,9 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
                             onClientRemoved(clientUUID);
                         }
 
-                        logger.tracef("Loaded %d batch of user sessions (offline=%s, sessionIds=%s)", batchedUserSessions.size(), offlineStr, sessionsById.keySet());
+                        if (logger.isTraceEnabled()) {
+                            logger.tracef("Loaded %d batch of user sessions (offline=%s, sessionIds=%s)", batchedUserSessions.size(), offlineStr, sessionsById.keySet());
+                        }
 
                         return batchedUserSessions.stream();
                     }).map(UserSessionModel.class::cast));
@@ -525,11 +558,54 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
                 onClientRemoved(clientUUID);
             }
 
-            logger.tracef("Loaded %d user sessions (offline=%s, sessionIds=%s)", userSessionAdapters.size(), offlineStr, sessionsById.keySet());
+            if (logger.isTraceEnabled()) {
+                logger.tracef("Loaded %d batch of user sessions (offline=%s, sessionIds=%s)", userSessionAdapters.size(), offlineStr, sessionsById.keySet());
+            }
 
             return userSessionAdapters.stream().map(UserSessionModel.class::cast);
 
         }
+    }
+
+    private Stream<UserSessionModel> readOnlyLoadExactUserSessionsWithClientSessions(TypedQuery<ImmutablePersistentUserSessionEntity> query, RealmModel realm, String offlineStr) {
+        // Take the results returned by the database in chunks and enrich them.
+        // The chunking avoids loading all the entries, as the caller usually adds pagination for the frontend.
+        var stream = StreamsUtil.closing(query.getResultStream())
+                .map(entity -> new PersistentUserSessionAdapter(session, entity, realm, entity.userId(), new HashMap<>()));
+        return closing(StreamsUtil.chunkedStream(stream, 100)
+                .flatMap(batchedUserSessions -> {
+
+                    var sessionsById = batchedUserSessions.stream()
+                            .collect(Collectors.toMap(UserSessionModel::getId, Function.identity()));
+
+                    var queryClientSessions = em.createNamedQuery("findClientSessionsOrderedByIdExactReadOnly", ImmutablePersistentClientSessionEntity.class)
+                            .setParameter("offline", offlineStr)
+                            .setParameter("userSessionIds", sessionsById.keySet())
+                            .setHint(HibernateHints.HINT_READ_ONLY, true)
+                            .setHint(HibernateHints.HINT_FETCH_SIZE, 512);
+                    var clientStream = closing(queryClientSessions.getResultStream());
+
+                    clientStream.forEach(clientSessionEntity -> {
+                        var userSession = sessionsById.get(clientSessionEntity.getUserSessionId());
+                        // check if we have a user session for the client session
+                        if (userSession == null) {
+                            return;
+                        }
+                        var client = realm.getClientById(clientSessionEntity.getClientId());
+                        if (client == null) {
+                            return;
+                        }
+
+                        var adapter = new PersistentAuthenticatedClientSessionAdapter(session, clientSessionEntity, realm, client, userSession);
+                        userSession.getAuthenticatedClientSessions().put(clientSessionEntity.getClientId(), adapter);
+                    });
+
+                    if (logger.isTraceEnabled()) {
+                        logger.tracef("Loaded %d batch of user sessions (offline=%s, sessionIds=%s)", batchedUserSessions.size(), offlineStr, sessionsById.keySet());
+                    }
+
+                    return batchedUserSessions.stream();
+                }).map(UserSessionModel.class::cast));
     }
 
     private void processClientSessions(Map<String, OfflineUserSessionModel> sessionsById, Set<String> removedClientUUIDs, TypedQuery<PersistentClientSessionEntity> queryClientSessions) {
@@ -771,7 +847,7 @@ public class JpaUserSessionPersisterProvider implements UserSessionPersisterProv
         return offline ? "1" : "0";
     }
 
-    private boolean offlineFromString(String offlineStr) {
+    static boolean offlineFromString(String offlineStr) {
         return "1".equals(offlineStr);
     }
 

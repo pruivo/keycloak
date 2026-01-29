@@ -59,7 +59,22 @@ import java.io.Serializable;
         @NamedQuery(name="findClientSessionsClientIds", query="SELECT clientSess.clientId, clientSess.externalClientId, clientSess.clientStorageProvider, count(clientSess)" +
                 " FROM PersistentClientSessionEntity clientSess INNER JOIN PersistentUserSessionEntity sess ON clientSess.userSessionId = sess.userSessionId AND sess.offline = clientSess.offline" +
                 " WHERE sess.offline = :offline AND sess.realmId = :realmId AND sess.lastSessionRefresh >= :lastSessionRefresh" +
-                " GROUP BY clientSess.clientId, clientSess.externalClientId, clientSess.clientStorageProvider")
+                " GROUP BY clientSess.clientId, clientSess.externalClientId, clientSess.clientStorageProvider"),
+        @NamedQuery(name = "findUserSessionsByRealmAndTypeReadOnly",
+                query = "SELECT new org.keycloak.models.jpa.session.ImmutablePersistentUserSessionEntity(sess.userSessionId, sess.realmId, sess.userId, sess.createdOn, sess.lastSessionRefresh, sess.brokerSessionId, sess.offline, sess.data)" +
+                        " FROM PersistentUserSessionEntity sess" +
+                        " WHERE sess.realmId = :realmId AND sess.offline = :offline AND sess.lastSessionRefresh >= :lastSessionRefresh" +
+                        " ORDER BY sess.userSessionId"),
+        @NamedQuery(name = "findUserSessionsByClientIdReadOnly",
+                query = "SELECT new org.keycloak.models.jpa.session.ImmutablePersistentUserSessionEntity(sess.userSessionId, sess.realmId, sess.userId, sess.createdOn, sess.lastSessionRefresh, sess.brokerSessionId, sess.offline, sess.data)" +
+                        " FROM PersistentUserSessionEntity sess INNER JOIN PersistentClientSessionEntity clientSess " +
+                        " ON sess.userSessionId = clientSess.userSessionId AND sess.offline = clientSess.offline AND clientSess.clientId = :clientId WHERE sess.offline = :offline " +
+                        " AND sess.realmId = :realmId AND sess.lastSessionRefresh >= :lastSessionRefresh ORDER BY sess.userSessionId"),
+        @NamedQuery(name = "findUserSessionsByExternalClientIdReadOnly",
+                query = "SELECT new org.keycloak.models.jpa.session.ImmutablePersistentUserSessionEntity(sess.userSessionId, sess.realmId, sess.userId, sess.createdOn, sess.lastSessionRefresh, sess.brokerSessionId, sess.offline, sess.data)" +
+                        " FROM PersistentUserSessionEntity sess INNER JOIN PersistentClientSessionEntity clientSess " +
+                        " ON sess.userSessionId = clientSess.userSessionId AND clientSess.clientStorageProvider = :clientStorageProvider AND sess.offline = clientSess.offline AND clientSess.externalClientId = :externalClientId WHERE sess.offline = :offline " +
+                        " AND sess.realmId = :realmId AND sess.lastSessionRefresh >= :lastSessionRefresh ORDER BY sess.userSessionId"),
 
 })
 @Table(name="OFFLINE_USER_SESSION")
