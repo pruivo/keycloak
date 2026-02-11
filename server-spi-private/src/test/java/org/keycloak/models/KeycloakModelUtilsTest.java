@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import org.keycloak.models.delegate.ClientModelLazyDelegate;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.RealmModelDelegate;
 
@@ -32,6 +33,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.arrayWithSize;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 /**
@@ -84,6 +86,11 @@ public class KeycloakModelUtilsTest {
                 counter.incrementAndGet();
                 return null;
             }
+
+            @Override
+            public RoleModel getRole(String name) {
+                return null;
+            }
         };
 
         String badRoleName = ".";
@@ -93,7 +100,171 @@ public class KeycloakModelUtilsTest {
         Assert.assertEquals(65536, badRoleName.length());
 
         Assert.assertNull(KeycloakModelUtils.getRoleFromString(realm, badRoleName));
-        Assert.assertEquals(KeycloakModelUtils.MAX_CLIENT_LOOKUPS_DURING_ROLE_RESOLVE, counter.get());
+        Assert.assertEquals(0, counter.get());
+    }
+
+    @Test
+    public void testGetRoleFromString() {
+        var clients = List.of(
+                new TestClientModel("not-a-match"),
+                new TestClientModel(".client"),
+                new TestClientModel("..client"),
+                new TestClientModel("client-1"),
+                new TestClientModel("client-2"),
+                new TestClientModel("client.3"),
+                new TestClientModel("client.1.3"),
+                new TestClientModel("client.1.2.3.4.5")
+        );
+        var realm = new RealmModelDelegate(null) {
+            @Override
+            public Stream<ClientModel> searchClientByClientIdStream(String clientId, Integer firstResult, Integer maxResults) {
+                return clients.stream()
+                        .filter(c -> c.getClientId().contains(clientId))
+                        .map(ClientModel.class::cast);
+            }
+
+            @Override
+            public RoleModel getRole(String name) {
+                return new TestRoleModel("realm|" + name);
+            }
+
+            @Override
+            public ClientModel getClientByClientId(String clientId) {
+                return clients.stream()
+                        .filter(c -> c.getClientId().equals(clientId))
+                        .findFirst()
+                        .orElse(null);
+            }
+        };
+
+        assertGetRoleFromString(realm, ".client.role", ".client|role");
+        assertGetRoleFromString(realm, "..client.role", "..client|role");
+        assertGetRoleFromString(realm, "client.1.3.role", "client.1.3|role");
+        assertGetRoleFromString(realm, "client-1.role.with.too.many.dots", "client-1|role.with.too.many.dots");
+        assertGetRoleFromString(realm, "client.1.2.3.4.5.role.with.too.many.dots", "client.1.2.3.4.5|role.with.too.many.dots");
+        // realm roles
+        assertGetRoleFromString(realm, "client-3.role", "realm|client-3.role");
+        assertGetRoleFromString(realm, "no-dots", "realm|no-dots");
+        assertGetRoleFromString(realm, "realm-role", "realm|realm-role");
+    }
+
+    private void assertGetRoleFromString(RealmModel realm, String roleName, String expectedRoleName) {
+        var role = KeycloakModelUtils.getRoleFromString(realm, roleName);
+        assertNotNull(role);
+        assertEquals(expectedRoleName, role.getName());
+    }
+
+    private record TestRoleModel(String roleName) implements RoleModel {
+
+        @Override
+        public String getName() {
+            return roleName;
+        }
+
+        @Override
+        public String getDescription() {
+            return "";
+        }
+
+        @Override
+        public void setDescription(String description) {
+
+        }
+
+        @Override
+        public String getId() {
+            return "";
+        }
+
+        @Override
+        public void setName(String name) {
+
+        }
+
+        @Override
+        public boolean isComposite() {
+            return false;
+        }
+
+        @Override
+        public void addCompositeRole(RoleModel role) {
+
+        }
+
+        @Override
+        public void removeCompositeRole(RoleModel role) {
+
+        }
+
+        @Override
+        public Stream<RoleModel> getCompositesStream(String search, Integer first, Integer max) {
+            return Stream.empty();
+        }
+
+        @Override
+        public boolean isClientRole() {
+            return false;
+        }
+
+        @Override
+        public String getContainerId() {
+            return "";
+        }
+
+        @Override
+        public RoleContainerModel getContainer() {
+            return null;
+        }
+
+        @Override
+        public boolean hasRole(RoleModel role) {
+            return false;
+        }
+
+        @Override
+        public void setSingleAttribute(String name, String value) {
+
+        }
+
+        @Override
+        public void setAttribute(String name, List<String> values) {
+
+        }
+
+        @Override
+        public void removeAttribute(String name) {
+
+        }
+
+        @Override
+        public Stream<String> getAttributeStream(String name) {
+            return Stream.empty();
+        }
+
+        @Override
+        public Map<String, List<String>> getAttributes() {
+            return Map.of();
+        }
+    }
+
+    private static class TestClientModel extends ClientModelLazyDelegate {
+
+        private final String clientId;
+
+        public TestClientModel(String clientId) {
+            super(null);
+            this.clientId = clientId;
+        }
+
+        @Override
+        public String getClientId() {
+            return clientId;
+        }
+
+        @Override
+        public RoleModel getRole(String name) {
+            return new TestRoleModel(clientId + "|" + name);
+        }
     }
 
     @Test

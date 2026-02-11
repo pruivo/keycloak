@@ -34,6 +34,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -110,6 +111,7 @@ public final class KeycloakModelUtils {
     public static final String GROUP_PATH_SEPARATOR = "/";
     public static final String GROUP_PATH_ESCAPE = "~";
     private static final char CLIENT_ROLE_SEPARATOR = '.';
+    private static final String CLIENT_ROLE_SEPARATOR_REGEX = "\\.";
 
     public static final int MAX_CLIENT_LOOKUPS_DURING_ROLE_RESOLVE = 25;
 
@@ -999,27 +1001,75 @@ public final class KeycloakModelUtils {
             return null;
         }
 
-        // Check client roles for all possible splits by dot
-        int counter = 0;
-        int scopeIndex = roleName.lastIndexOf(CLIENT_ROLE_SEPARATOR);
-        while (scopeIndex >= 0 && counter < MAX_CLIENT_LOOKUPS_DURING_ROLE_RESOLVE) {
-            counter++;
-            String appName = roleName.substring(0, scopeIndex);
-            ClientModel client = realm.getClientByClientId(appName);
-            if (client != null) {
-                String role = roleName.substring(scopeIndex + 1);
-                return client.getRole(role);
-            }
+        var roleNameParts = roleName.split(CLIENT_ROLE_SEPARATOR_REGEX);
 
-            scopeIndex = roleName.lastIndexOf(CLIENT_ROLE_SEPARATOR, scopeIndex - 1);
+        if (roleNameParts.length <= 1) {
+            // no separator present, check if it is a realm role
+            return realm.getRole(roleName);
         }
-        if (counter >= MAX_CLIENT_LOOKUPS_DURING_ROLE_RESOLVE) {
-            logger.warnf("Not able to retrieve role model from the role name '%s'. Please use shorter role names with the limited amount of dots, roleName", roleName.length() > 100 ? roleName.substring(0, 100) + "..." : roleName);
-            return null;
+
+        if (roleNameParts.length == 2) {
+            return getRoleFromString(realm, roleNameParts[0], roleNameParts[1], roleName);
+        }
+
+       return getRoleFromStringCombinations(realm, roleNameParts, roleName);
+    }
+
+    private static RoleModel getRoleFromString(RealmModel realm, String clientId, String clientRoleName, String fullRoleName) {
+        // fast path, clientId.clientRole
+        // if client does not exist, check if it is a realm role
+        if (clientId.isEmpty()) {
+            // roleName starts with a dot(?)
+            return realm.getRole(fullRoleName);
+        }
+        var client = realm.getClientByClientId(clientId);
+        return client == null ?
+                realm.getRole(fullRoleName) :
+                client.getRole(clientRoleName);
+    }
+
+    private static RoleModel getRoleFromStringCombinations(RealmModel realm, String[] roleNameParts, String fullRoleName) {
+        var startIdx = new AtomicInteger();
+        var clientIdToTest = findNonEmptyClientId(roleNameParts, startIdx);
+        var clients = realm.searchClientByClientIdStream(clientIdToTest, null, null)
+                .collect(Collectors.toMap(ClientModel::getClientId, Function.identity()));
+
+        var idx = startIdx.incrementAndGet();
+        var client = clients.get(clientIdToTest);
+        if (client != null) {
+            return client.getRole(mergeRoleName(roleNameParts, idx));
+        }
+
+        for (; idx < roleNameParts.length - 1; ++idx) {
+            clientIdToTest += CLIENT_ROLE_SEPARATOR + roleNameParts[idx];
+            client = clients.get(clientIdToTest);
+            if (client != null) {
+                return client.getRole(mergeRoleName(roleNameParts, idx + 1));
+            }
         }
 
         // determine if roleName is a realm role
-        return realm.getRole(roleName);
+        return realm.getRole(fullRoleName);
+    }
+
+    private static String mergeRoleName(String[] parts, int startIndex) {
+        return Arrays.stream(parts)
+                .skip(startIndex)
+                .collect(Collectors.joining(String.valueOf(CLIENT_ROLE_SEPARATOR)));
+    }
+
+    private static String findNonEmptyClientId(String[] parts, AtomicInteger idx) {
+        // just in case the client Id starts with a dot
+        var builder = new StringBuilder();
+        for (; idx.get() < parts.length; idx.incrementAndGet()) {
+            String part = parts[idx.get()];
+            builder.append(part);
+            if (!part.isEmpty()) {
+                break;
+            }
+            builder.append(CLIENT_ROLE_SEPARATOR);
+        }
+        return builder.toString();
     }
 
     // Used for hardcoded role mappers
