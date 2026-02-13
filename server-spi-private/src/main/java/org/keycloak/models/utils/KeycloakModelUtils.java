@@ -126,7 +126,8 @@ public final class KeycloakModelUtils {
         var metrics = new CaffeineStatsCounter(Metrics.globalRegistry, "role.name.cache");
         var cache = Caffeine.newBuilder()
                 .maximumSize(10000)
-                .expireAfterAccess(Duration.ofHours(1))
+                // do not keep entries forever, as the combination of realm and client roles might lead to different matches eventually
+                .expireAfterWrite(Duration.ofHours(1))
                 .recordStats(() -> metrics)
                 .<RoleCacheKey, RoleCacheValue>build();
         metrics.registerSizeMetric(cache);
@@ -1080,12 +1081,18 @@ public final class KeycloakModelUtils {
             if (cached.clientId() != null) {
                 var client = realm.getClientByClientId(cached.clientId());
                 if (client != null) {
-                    return new CachedRole(client.getRole(cached.roleName()));
+                    RoleModel role = client.getRole(cached.roleName());
+                    if (role != null) {
+                        return new CachedRole(role);
+                    }
                 }
             } else {
-                return new CachedRole(realm.getRole(cached.roleName()));
+                RoleModel role = realm.getRole(cached.roleName());
+                if (role != null) {
+                    return new CachedRole(role);
+                }
             }
-            // client not found, invalidate cache
+            // client or role not found, invalidate cache
             ROLE_NAME_FROM_STRING_CACHE.invalidate(cacheKey);
         }
         return null;
