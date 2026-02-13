@@ -135,6 +135,11 @@ public class KeycloakModelUtilsTest {
                         .findFirst()
                         .orElse(null);
             }
+
+            @Override
+            public String getId() {
+                return "realm";
+            }
         };
 
         assertGetRoleFromString(realm, ".client.role", ".client|role");

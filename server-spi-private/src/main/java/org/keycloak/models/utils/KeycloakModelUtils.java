@@ -23,6 +23,7 @@ import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Calendar;
@@ -91,7 +92,10 @@ import org.keycloak.transaction.JtaTransactionManagerLookup;
 import org.keycloak.transaction.RequestContextHelper;
 import org.keycloak.utils.KeycloakSessionUtil;
 
-import org.jboss.logging.Logger;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.binder.cache.CaffeineStatsCounter;
 
 import static org.keycloak.utils.StreamsUtil.closing;
 
@@ -103,7 +107,7 @@ import static org.keycloak.utils.StreamsUtil.closing;
  */
 public final class KeycloakModelUtils {
 
-    private static final Logger logger = Logger.getLogger(KeycloakModelUtils.class);
+    private static final Cache<RoleCacheKey, RoleCacheValue> ROLE_NAME_FROM_STRING_CACHE;
 
     public static final String AUTH_TYPE_CLIENT_SECRET = "client-secret";
     public static final String AUTH_TYPE_CLIENT_SECRET_JWT = "client-secret-jwt";
@@ -117,6 +121,17 @@ public final class KeycloakModelUtils {
 
     public static final int DEFAULT_RSA_KEY_SIZE = 4096;
     public static final int DEFAULT_CERTIFICATE_VALIDITY_YEARS = 3;
+
+    static {
+        var metrics = new CaffeineStatsCounter(Metrics.globalRegistry, "role.name.cache");
+        var cache = Caffeine.newBuilder()
+                .maximumSize(10000)
+                .expireAfterAccess(Duration.ofHours(1))
+                .recordStats(() -> metrics)
+                .<RoleCacheKey, RoleCacheValue>build();
+        metrics.registerSizeMetric(cache);
+        ROLE_NAME_FROM_STRING_CACHE = cache;
+    }
 
     private KeycloakModelUtils() {
     }
@@ -1029,6 +1044,10 @@ public final class KeycloakModelUtils {
     }
 
     private static RoleModel getRoleFromStringCombinations(RealmModel realm, String[] roleNameParts, String fullRoleName) {
+        var role = getRoleFromStringCombinationsFromCache(realm, fullRoleName);
+        if (role != null) {
+            return role.cachedRole();
+        }
         var startIdx = new AtomicInteger();
         var clientIdToTest = findNonEmptyClientId(roleNameParts, startIdx);
         var clients = realm.searchClientByClientIdStream(clientIdToTest, null, null)
@@ -1037,19 +1056,49 @@ public final class KeycloakModelUtils {
         var idx = startIdx.incrementAndGet();
         var client = clients.get(clientIdToTest);
         if (client != null) {
-            return client.getRole(mergeRoleName(roleNameParts, idx));
+            var roleName = mergeRoleName(roleNameParts, idx);
+            return getRoleAndCache(realm, client, roleName, fullRoleName);
         }
 
         for (; idx < roleNameParts.length - 1; ++idx) {
             clientIdToTest += CLIENT_ROLE_SEPARATOR + roleNameParts[idx];
             client = clients.get(clientIdToTest);
             if (client != null) {
-                return client.getRole(mergeRoleName(roleNameParts, idx + 1));
+                var roleName = mergeRoleName(roleNameParts, idx + 1);
+                return getRoleAndCache(realm, client, roleName, fullRoleName);
             }
         }
 
         // determine if roleName is a realm role
-        return realm.getRole(fullRoleName);
+        return getRoleAndCache(realm, fullRoleName);
+    }
+
+    private static CachedRole getRoleFromStringCombinationsFromCache(RealmModel realm, String fullRoleName) {
+        var cacheKey = new RoleCacheKey(realm.getId(), fullRoleName);
+        var cached = ROLE_NAME_FROM_STRING_CACHE.getIfPresent(cacheKey);
+        if (cached != null) {
+            if (cached.clientId() != null) {
+                var client = realm.getClientByClientId(cached.clientId());
+                if (client != null) {
+                    return new CachedRole(client.getRole(cached.roleName()));
+                }
+            } else {
+                return new CachedRole(realm.getRole(cached.roleName()));
+            }
+            // client not found, invalidate cache
+            ROLE_NAME_FROM_STRING_CACHE.invalidate(cacheKey);
+        }
+        return null;
+    }
+
+    private static RoleModel getRoleAndCache(RealmModel realm, ClientModel client, String roleName, String fullRoleName) {
+        ROLE_NAME_FROM_STRING_CACHE.put(new RoleCacheKey(realm.getId(), fullRoleName), new RoleCacheValue(client.getClientId(), roleName));
+        return client.getRole(roleName);
+    }
+
+    private static RoleModel getRoleAndCache(RealmModel realm, String roleName) {
+        ROLE_NAME_FROM_STRING_CACHE.put(new RoleCacheKey(realm.getId(), roleName), new RoleCacheValue(null, roleName));
+        return realm.getRole(roleName);
     }
 
     private static String mergeRoleName(String[] parts, int startIndex) {
@@ -1355,4 +1404,19 @@ public final class KeycloakModelUtils {
         }
         return acceptedClientProtocols;
     }
+
+    private record RoleCacheValue(String clientId, String roleName) {
+        private RoleCacheValue {
+            Objects.requireNonNull(roleName);
+        }
+    }
+
+    private record RoleCacheKey(String realmId, String roleNameString) {
+        private RoleCacheKey {
+            Objects.requireNonNull(realmId);
+            Objects.requireNonNull(roleNameString);
+        }
+    }
+
+    private record CachedRole(RoleModel cachedRole) {}
 }
