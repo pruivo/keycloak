@@ -49,6 +49,7 @@ public class QuarkusKeycloakApplication extends KeycloakApplication {
     private static final String KEYCLOAK_ADMIN_PASSWORD_ENV_VAR = "KEYCLOAK_ADMIN_PASSWORD";
 
     private static final Logger logger = Logger.getLogger(QuarkusKeycloakApplication.class);
+    private static boolean bootstrapCompleted = false;
 
     @Override
     protected String getDataDir() {
@@ -102,6 +103,21 @@ public class QuarkusKeycloakApplication extends KeycloakApplication {
         } catch (NumberFormatException e) {
             throw new RuntimeException("Invalid admin expiration value provided. An integer is expected.", e);
         }
+    }
+
+    @Override
+    protected void onInitializationCompleted() {
+        bootstrapCompleted = true;
+    }
+
+    @Override
+    protected boolean supportsAsyncInitialization() {
+        // TODO support only for production environment, dev and non server probably won't need to do async init
+        return !org.keycloak.common.util.Environment.isNonServerMode();
+    }
+
+    public static boolean isBootstrapCompleted() {
+        return bootstrapCompleted;
     }
 
     @Override

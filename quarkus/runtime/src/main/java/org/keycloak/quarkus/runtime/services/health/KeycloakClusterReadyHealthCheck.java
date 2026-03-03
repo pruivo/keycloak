@@ -33,7 +33,7 @@ import static org.keycloak.quarkus.runtime.services.health.KeycloakReadyHealthCh
 
 public class KeycloakClusterReadyHealthCheck implements AsyncHealthCheck {
 
-    private final AtomicReference<Instant> failingSince = new AtomicReference<>();
+    private static final AtomicReference<Instant> failingSince = new AtomicReference<>();
 
     @Override
     public Uni<HealthCheckResponse> call() {

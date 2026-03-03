@@ -17,6 +17,7 @@
 package org.keycloak.services.resources;
 
 import java.io.File;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import jakarta.ws.rs.core.Application;
@@ -81,8 +82,37 @@ public abstract class KeycloakApplication extends Application {
     protected void startup() {
         Profile.getInstance().logUnsupportedFeatures();
         CryptoIntegration.init(KeycloakApplication.class.getClassLoader());
-        KeycloakApplication.sessionFactory = createSessionFactory();
+        if (supportsAsyncInitialization()) {
+            CompletableFuture.runAsync(this::initializeAndStart)
+                    .exceptionally(throwable -> {
+                        exit(throwable);
+                        return null;
+                    });
+            return;
+        }
+        initializeAndStart();
+    }
 
+    protected void onInitializationCompleted() {
+
+    }
+
+    protected boolean supportsAsyncInitialization() {
+        return false;
+    }
+
+    private void initializeAndStart() {
+
+        var slowStartDelay = System.getProperty("org.keycloak.start-delay");
+        if (slowStartDelay != null) {
+            try {
+                Thread.sleep(TimeUnit.SECONDS.toMillis(Integer.parseInt(slowStartDelay)));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        KeycloakApplication.sessionFactory = createSessionFactory();
         setTransactionTimeout();
         var exportImportManager = KeycloakModelUtils.runJobInTransactionWithResult(sessionFactory, session -> {
             DBLockManager dbLockManager = new DBLockManager(session);
@@ -103,6 +133,9 @@ public abstract class KeycloakApplication extends Application {
 
         resetTransactionTimeout();
         sessionFactory.publish(new PostMigrationEvent(sessionFactory));
+        onInitializationCompleted();
+        // TODO log duration
+        logger.info("Initialization completed");
     }
 
     protected int getTransactionTimeout(KeycloakSessionFactory sessionFactory) {
