@@ -18,6 +18,7 @@
 package org.keycloak.connections.infinispan;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -41,6 +43,10 @@ import org.keycloak.connections.infinispan.remote.RemoteInfinispanConnectionProv
 import org.keycloak.connections.infinispan.shutdown.ShutdownManager;
 import org.keycloak.connections.infinispan.shutdown.TopologyChangeCacheListener;
 import org.keycloak.infinispan.health.ClusterHealth;
+import org.keycloak.infinispan.health.CompositeClusterHealth;
+import org.keycloak.infinispan.health.embedded.EmbeddedCacheHealthImpl;
+import org.keycloak.infinispan.health.remote.RemoteCacheHealthImpl;
+import org.keycloak.infinispan.health.site.SiteHealthImpl;
 import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.marshalling.KeycloakIndexSchemaUtil;
 import org.keycloak.marshalling.KeycloakModelSchema;
@@ -65,6 +71,8 @@ import org.keycloak.spi.infinispan.CacheEmbeddedConfigProvider;
 import org.keycloak.spi.infinispan.CacheRemoteConfigProvider;
 import org.keycloak.spi.infinispan.impl.embedded.CacheConfigurator;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.Metrics;
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.commons.configuration.io.ConfigurationWriter;
 import org.infinispan.commons.io.StringBuilderWriter;
@@ -102,6 +110,11 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
     private static final ReadWriteLock READ_WRITE_LOCK = new ReentrantReadWriteLock();
     private static final Logger logger = Logger.getLogger(DefaultInfinispanConnectionProviderFactory.class);
     private static final String SHUTDOWN_TIMEOUT = "shutdownTimeout";
+
+    private static final String SITE_HEALTH_ENABLED = "siteHealthEnabled";
+    private static final String JGROUPS_HEALTH_ENABLED = "jgroupsHealthEnabled";
+    private static final String EMBEDDED_HEALTH_ENABLED = "embeddedHealthEnabled";
+    private static final String REMOTE_HEALTH_ENABLED = "remoteHealthEnabled";
 
     private Config.Scope config;
 
@@ -145,6 +158,10 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
     @Override
     public void close() {
         logger.debug("Closing provider");
+        if (clusterHealth != null) {
+            clusterHealth.close();
+            clusterHealth = null;
+        }
         if (shutdownManager != null) {
             shutdownManager.onShutdown();
             shutdownManager = null;
@@ -198,7 +215,9 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
                     new RemoteInfinispanConnectionProvider(cacheManager, remoteCacheManager, topologyInfo, nodeInfo) :
                     new DefaultInfinispanConnectionProvider(cacheManager, topologyInfo, nodeInfo);
 
-            clusterHealth = GlobalComponentRegistry.componentOf(cacheManager, ClusterHealth.class);
+            clusterHealth = InfinispanUtils.isRemoteInfinispan() ?
+                    createClusterHealthWithRemote(keycloakSession.getKeycloakSessionFactory()) :
+                    createClusterHealthWithEmbedded();
             return connectionProvider;
         }
     }
@@ -230,6 +249,42 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
             sm.addListener(listener);
         }
         shutdownManager = sm;
+    }
+
+    private ClusterHealth createClusterHealthWithRemote(KeycloakSessionFactory factory) {
+        var healths = new ArrayList<ClusterHealth>(3);
+        if (config.getBoolean(EMBEDDED_HEALTH_ENABLED, Boolean.TRUE)) {
+            healths.add(new EmbeddedCacheHealthImpl(cacheManager));
+        }
+        if (config.getBoolean(REMOTE_HEALTH_ENABLED, Boolean.TRUE)) {
+            healths.add(new RemoteCacheHealthImpl(remoteCacheManager, connectionProvider.getExecutor("remote-health")));
+        }
+        if (config.getBoolean(SITE_HEALTH_ENABLED, Profile.isFeatureEnabled(Profile.Feature.MULTI_SITE))) {
+            healths.add(createSiteHealth(factory));
+        }
+        return new CompositeClusterHealth(healths);
+    }
+
+    private ClusterHealth createClusterHealthWithEmbedded() {
+        var healths = new ArrayList<ClusterHealth>(2);
+        if (config.getBoolean(EMBEDDED_HEALTH_ENABLED, Boolean.TRUE)) {
+            healths.add(new EmbeddedCacheHealthImpl(cacheManager));
+        }
+        if (config.getBoolean(JGROUPS_HEALTH_ENABLED, Boolean.TRUE)) {
+            healths.add(GlobalComponentRegistry.componentOf(cacheManager, ClusterHealth.class));
+        }
+        return new CompositeClusterHealth(healths);
+    }
+
+    private SiteHealthImpl createSiteHealth(KeycloakSessionFactory factory) {
+        var siteStatus = new AtomicInteger(0);
+        if (cacheManager.getCacheManagerConfiguration().metrics().enabled()) {
+            Gauge.builder("keycloak.site.status", siteStatus, AtomicInteger::doubleValue)
+                    .description("Cross-site health status (0=healthy, 1=suspecting, 2=unhealthy, 3=recovering)")
+                    .register(Metrics.globalRegistry);
+        }
+        return SiteHealthImpl.create(factory, remoteCacheManager, connectionProvider.getExecutor("site-health"),
+                status -> siteStatus.set(status.getValue()));
     }
 
     private Duration getShutdownTimeout() {
@@ -402,6 +457,12 @@ public class DefaultInfinispanConnectionProviderFactory implements InfinispanCon
     public boolean isClusterHealthy() {
         clusterHealth.triggerClusterHealthCheck();
         return clusterHealth.isHealthy();
+    }
+
+    @Override
+    public boolean isSiteActive() {
+        clusterHealth.triggerClusterHealthCheck();
+        return clusterHealth.isSiteActive();
     }
 
     @Override

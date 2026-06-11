@@ -26,6 +26,21 @@ Additionally, some methods where updated for consistency across the builders:
 * `RealmBuilder` method `identityProviderMapper` renamed to `identityProviderMappers`
 * `RealmBuilder` method `requiredAction` renamed to `requiredActions`
 
+=== Built-in cross-site health check enabled by default for multi-site deployments
+
+When the `multi-site` feature is enabled, {project_name} now automatically activates a built-in cross-site health check algorithm that coordinates failover between sites using a database-backed state machine.
+This algorithm controls which site receives traffic by manipulating the `/lb-check` health endpoint.
+
+If you are using the AWS Lambda-based fencing mechanism to manage failover via AWS Global Accelerator, you must disable the built-in health check to avoid conflicts:
+
+[source]
+----
+--spi-connections-infinispan-default-site-health-enabled=false
+----
+
+Running both mechanisms simultaneously is not supported.
+Each may independently reach a different conclusion about which site is active, leading to split-brain or downtime.
+
 === Identity Provider alias is now immutable
 
 The alias of an Identity Provider can no longer be changed after creation via the Admin REST API. Attempts to update the alias will result in a `400 Bad Request` error.
