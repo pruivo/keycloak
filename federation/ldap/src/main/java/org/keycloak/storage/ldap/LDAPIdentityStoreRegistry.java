@@ -25,6 +25,7 @@ import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.storage.ldap.idm.store.ldap.LDAPIdentityStore;
+import org.keycloak.storage.ldap.idm.store.ldap.LdapOperationListener;
 import org.keycloak.storage.ldap.mappers.LDAPConfigDecorator;
 
 import org.jboss.logging.Logger;
@@ -39,6 +40,10 @@ public class LDAPIdentityStoreRegistry {
     private final Map<String, LDAPConfig> ldapStores = new ConcurrentHashMap<>();
 
     public LDAPIdentityStore getLdapStore(KeycloakSession session, ComponentModel ldapModel, Map<ComponentModel, LDAPConfigDecorator> configDecorators) {
+        return getLdapStore(session, ldapModel, configDecorators, null);
+    }
+
+    public LDAPIdentityStore getLdapStore(KeycloakSession session, ComponentModel ldapModel, Map<ComponentModel, LDAPConfigDecorator> configDecorators, LdapOperationListener operationListener) {
         // Ldap config might have changed for the realm. In this case, we must re-initialize
         MultivaluedHashMap<String, String> configModel = ldapModel.getConfig();
         LDAPConfig ldapConfig = new LDAPConfig(configModel);
@@ -50,12 +55,12 @@ public class LDAPIdentityStoreRegistry {
         }
 
         LDAPConfig cachedConfig = ldapStores.get(ldapModel.getId());
-        if (cachedConfig == null || !ldapConfig.equals(cachedConfig)) {
+        if (!ldapConfig.equals(cachedConfig)) {
             logLDAPConfig(session, ldapModel, ldapConfig);
             ldapStores.put(ldapModel.getId(), ldapConfig);
         }
 
-        return new LDAPIdentityStore(session, ldapConfig);
+        return new LDAPIdentityStore(session, ldapConfig, operationListener);
     }
 
     // Don't log LDAP password

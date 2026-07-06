@@ -31,6 +31,7 @@ import org.keycloak.Config;
 import org.keycloak.common.constants.KerberosConstants;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.component.ComponentValidationException;
+import org.keycloak.config.MetricsOptions;
 import org.keycloak.federation.kerberos.CommonKerberosConfig;
 import org.keycloak.federation.kerberos.impl.KerberosServerSubjectAuthenticator;
 import org.keycloak.federation.kerberos.impl.KerberosUsernamePasswordAuthenticator;
@@ -58,6 +59,8 @@ import org.keycloak.storage.ldap.idm.query.Condition;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQueryConditionsBuilder;
 import org.keycloak.storage.ldap.idm.store.ldap.LDAPIdentityStore;
+import org.keycloak.storage.ldap.idm.store.ldap.LdapOperationListener;
+import org.keycloak.storage.ldap.idm.store.ldap.Operation;
 import org.keycloak.storage.ldap.kerberos.LDAPProviderKerberosConfig;
 import org.keycloak.storage.ldap.mappers.FullNameLDAPStorageMapper;
 import org.keycloak.storage.ldap.mappers.FullNameLDAPStorageMapperFactory;
@@ -75,6 +78,8 @@ import org.keycloak.storage.user.ImportSynchronization;
 import org.keycloak.storage.user.SynchronizationResult;
 import org.keycloak.utils.CredentialHelper;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Metrics;
 import org.jboss.logging.Logger;
 
 /**
@@ -92,6 +97,7 @@ public class LDAPStorageProviderFactory implements UserStorageProviderFactory<LD
     private static final boolean SECURE_REFERRAL_DEFAULT = true;
 
     private LDAPIdentityStoreRegistry ldapStoreRegistry;
+    private LdapOperationListener operationListener;
 
     protected static final List<ProviderConfigProperty> configProperties;
 
@@ -240,7 +246,7 @@ public class LDAPStorageProviderFactory implements UserStorageProviderFactory<LD
     public LDAPStorageProvider create(KeycloakSession session, ComponentModel model) {
         Map<ComponentModel, LDAPConfigDecorator> configDecorators = getLDAPConfigDecorators(session, model);
 
-        LDAPIdentityStore ldapIdentityStore = this.ldapStoreRegistry.getLdapStore(session, model, configDecorators);
+        LDAPIdentityStore ldapIdentityStore = this.ldapStoreRegistry.getLdapStore(session, model, configDecorators, operationListener);
         return new LDAPStorageProvider(this, session, model, ldapIdentityStore);
     }
 
@@ -341,6 +347,24 @@ public class LDAPStorageProviderFactory implements UserStorageProviderFactory<LD
         }
 
         this.ldapStoreRegistry = new LDAPIdentityStoreRegistry();
+
+        if (config.getBoolean("metricsEnabled", false) && config.root().getBoolean(MetricsOptions.METRICS_ENABLED.getKey(), false)) {
+            var counter = Counter.builder("keycloak.ldap")
+                    .description("Number of LDAP requests sent to the LDAP server")
+                    .baseUnit("requests")
+                    .withRegistry(Metrics.globalRegistry);
+            operationListener = new LdapOperationListener() {
+                @Override
+                public void onSuccess(Operation operation) {
+                    counter.withTags("operation", operation.name().toLowerCase(), "outcome", "success").increment();
+                }
+
+                @Override
+                public void onFailure(Operation operation) {
+                    counter.withTags("operation", operation.name().toLowerCase(), "outcome", "error").increment();
+                }
+            };
+        }
     }
 
     @Override

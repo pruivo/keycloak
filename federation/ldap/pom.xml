@@ -89,6 +89,11 @@
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-services</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
 </project>

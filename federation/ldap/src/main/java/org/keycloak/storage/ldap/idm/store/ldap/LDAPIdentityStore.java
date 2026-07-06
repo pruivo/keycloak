@@ -81,8 +81,12 @@ public class LDAPIdentityStore implements IdentityStore {
     private final LDAPOperationManager operationManager;
 
     public LDAPIdentityStore(KeycloakSession session, LDAPConfig config) {
+        this(session, config, null);
+    }
+
+    public LDAPIdentityStore(KeycloakSession session, LDAPConfig config, LdapOperationListener operationListener) {
         this.config = config;
-        this.operationManager = new LDAPOperationManager(session, config);
+        this.operationManager = new LDAPOperationManager(session, config, operationListener);
     }
 
     @Override

@@ -23,6 +23,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import javax.naming.AuthenticationException;
 import javax.naming.Binding;
@@ -79,10 +80,17 @@ public class LDAPOperationManager {
 
     private final KeycloakSession session;
     private final LDAPConfig config;
+    private final LdapOperationListener operationListener;
 
+    @Deprecated
     public LDAPOperationManager(KeycloakSession session, LDAPConfig config) {
+        this(session, config, null);
+    }
+
+    public LDAPOperationManager(KeycloakSession session, LDAPConfig config, LdapOperationListener operationListener) {
         this.session = session;
         this.config = config;
+        this.operationListener = Objects.requireNonNullElse(operationListener, LdapOperationListener.Empty.INSTANCE);
     }
 
     /**
@@ -545,22 +553,25 @@ public class LDAPOperationManager {
                     }
                 }
             }
-
+            operationListener.onSuccess(Operation.AUTH);
         } catch (AuthenticationException ae) {
             if (logger.isDebugEnabled()) {
                 logger.debugf(ae, "Authentication failed for DN [%s]", dn);
             }
             tracing.error(ae);
+            operationListener.onFailure(Operation.AUTH);
             throw ae;
         } catch(RuntimeException re){
             if (logger.isDebugEnabled()) {
                 logger.debugf(re, "LDAP Connection TimeOut for DN [%s]", dn);
             }
             tracing.error(re);
+            operationListener.onFailure(Operation.AUTH);
             throw re;
         } catch (Exception e) {
             logger.errorf(e, "Unexpected exception when validating password of DN [%s]", dn);
             tracing.error(e);
+            operationListener.onFailure(Operation.AUTH);
             throw new AuthenticationException("Unexpected exception when validating password of user");
         } finally {
             if (tlsResponse != null) {
@@ -775,8 +786,11 @@ public class LDAPOperationManager {
                 decorator.beforeLDAPOperation(context, operation);
             }
 
-            return operation.execute(context);
+            var r = operation.execute(context);
+            operationListener.onSuccess(Operation.EXEC);
+            return r;
         } catch (NamingException e) {
+            operationListener.onFailure(Operation.EXEC);
             tracing.error(e);
             throw e;
         } finally {
